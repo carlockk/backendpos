@@ -1,8 +1,8 @@
-import express from 'express';
-import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
-import Producto from '../models/product.model.js';
+const express = require('express');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const Producto = require('../models/product.model.js');
 
 const router = express.Router();
 
@@ -28,7 +28,6 @@ router.post('/', upload.single('imagen'), async (req, res) => {
   try {
     const imagen_url = req.file ? `/uploads/img/${req.file.filename}` : '';
 
-    // Lógica robusta para stock
     let stock = null;
     if ('stock' in req.body) {
       const parsed = parseInt(req.body.stock);
@@ -51,7 +50,6 @@ router.post('/', upload.single('imagen'), async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
-
 
 // ✅ LISTAR PRODUCTOS
 router.get('/', async (req, res) => {
@@ -102,11 +100,9 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
       categoria: req.body.categoria || null
     };
 
-    // Manejo robusto del campo stock
     if ('stock' in req.body) {
       const s = req.body.stock;
       const parsed = parseInt(s);
-
       if (s === '' || s === undefined || isNaN(parsed)) {
         actualizar.stock = null;
         console.log('🟠 Stock se guardará como null');
@@ -116,7 +112,6 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
       }
     }
 
-    // Actualización de imagen si se sube nueva
     if (req.file) {
       if (producto.imagen_url?.startsWith('/uploads/img/')) {
         const rutaAnterior = path.join('uploads', 'img', path.basename(producto.imagen_url));
@@ -133,4 +128,4 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;
