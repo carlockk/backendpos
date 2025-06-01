@@ -1,5 +1,4 @@
-// backend/models/venta.model.js
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const ventaSchema = new mongoose.Schema({
   numero_pedido: Number,
@@ -16,9 +15,9 @@ const ventaSchema = new mongoose.Schema({
   tipo_pago: String,
   tipo_pedido: String,
   fecha: {
-  type: Date,
-  default: () => new Date()
-}
+    type: Date,
+    default: () => new Date()
+  }
 });
 
-export default mongoose.model('Venta', ventaSchema);
+module.exports = mongoose.model('Venta', ventaSchema);

@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const cajaSchema = new mongoose.Schema({
   apertura: { type: Date, default: Date.now },
@@ -10,4 +10,4 @@ const cajaSchema = new mongoose.Schema({
   usuario: { type: String, default: 'No registrado' }
 });
 
-export default mongoose.model('Caja', cajaSchema);
+module.exports = mongoose.model('Caja', cajaSchema);

@@ -1,5 +1,4 @@
-// backend/models/categoria.model.js
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const categoriaSchema = new mongoose.Schema({
   nombre: { type: String, required: true, trim: true },
@@ -7,4 +6,4 @@ const categoriaSchema = new mongoose.Schema({
   creada_en: { type: Date, default: Date.now }
 });
 
-export default mongoose.model('Categoria', categoriaSchema);
+module.exports = mongoose.model('Categoria', categoriaSchema);
