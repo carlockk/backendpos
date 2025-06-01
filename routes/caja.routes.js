@@ -1,6 +1,6 @@
-import express from 'express';
-import Caja from '../models/caja.model.js';
-import Venta from '../models/venta.model.js';
+const express = require('express');
+const Caja = require('../models/caja.model.js');
+const Venta = require('../models/venta.model.js');
 
 const router = express.Router();
 
@@ -30,8 +30,6 @@ router.post('/abrir', async (req, res) => {
 // Cerrar caja
 router.post('/cerrar', async (req, res) => {
   try {
-    //console.log("📥 BODY recibido al cerrar:", req.body);
-
     const caja = await Caja.findOne({ cierre: null });
     if (!caja) return res.status(400).json({ error: 'No hay caja abierta.' });
 
@@ -50,8 +48,6 @@ router.post('/cerrar', async (req, res) => {
     caja.desglose_por_pago = desglose;
 
     caja.usuario = req.body?.nombre || 'No identificado';
-    //console.log("📝 Usuario que se guardará:", caja.usuario);
-
     await caja.save();
 
     res.json({
@@ -83,4 +79,4 @@ router.get('/historial', async (_req, res) => {
   }
 });
 
-export default router;
+module.exports = router;

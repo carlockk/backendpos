@@ -1,5 +1,5 @@
-import express from 'express';
-import Venta from '../models/venta.model.js';
+const express = require('express');
+const Venta = require('../models/venta.model.js');
 
 const router = express.Router();
 
@@ -94,4 +94,4 @@ router.post('/', async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;

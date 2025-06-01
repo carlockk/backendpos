@@ -1,6 +1,5 @@
-// backend/routes/categoria.routes.js
-import express from 'express';
-import Categoria from '../models/categoria.model.js';
+const express = require('express');
+const Categoria = require('../models/categoria.model.js');
 
 const router = express.Router();
 
@@ -32,4 +31,4 @@ router.post('/', async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;
