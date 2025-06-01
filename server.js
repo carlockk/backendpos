@@ -1,24 +1,22 @@
-import express from 'express';
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
+const express = require('express');
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const cors = require('cors');
+const path = require('path');
 
-import productRoutes from './routes/product.routes.js';
-import ventaRoutes from './routes/venta.routes.js';
-import cajaRoutes from './routes/caja.routes.js';
-import authRoutes from './routes/auth.routes.js';
-import usuarioRoutes from './routes/usuario.routes.js';
-import categoriaRoutes from './routes/categoria.routes.js';
-import ticketRoutes from './routes/ticket.routes.js';
+const productRoutes = require('./routes/product.routes.js');
+const ventaRoutes = require('./routes/venta.routes.js');
+const cajaRoutes = require('./routes/caja.routes.js');
+const authRoutes = require('./routes/auth.routes.js');
+const usuarioRoutes = require('./routes/usuario.routes.js');
+const categoriaRoutes = require('./routes/categoria.routes.js');
+const ticketRoutes = require('./routes/ticket.routes.js');
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.resolve();
 
 // Middleware
 app.use(cors());
