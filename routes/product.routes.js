@@ -6,8 +6,8 @@ const Producto = require('../models/product.model.js');
 
 const router = express.Router();
 
-// 🟢 Configura el dominio completo del backend (Railway)
-const DOMAIN = 'https://web-production-1d6f4.up.railway.app'; // Cambiar por tu dominio Railway real
+// 🔥 Elimina esta línea estática, ya no se necesita:
+// const DOMAIN = 'https://web-production-1d6f4.up.railway.app';
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -29,7 +29,9 @@ const upload = multer({ storage });
 // ✅ CREAR PRODUCTO
 router.post('/', upload.single('imagen'), async (req, res) => {
   try {
-    const imagen_url = req.file ? `${DOMAIN}/uploads/img/${req.file.filename}` : '';
+    const imagen_url = req.file
+      ? `${req.protocol}://${req.get('host')}/uploads/img/${req.file.filename}`
+      : '';
 
     let stock = null;
     if ('stock' in req.body) {
@@ -120,7 +122,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         const rutaAnterior = path.join('uploads', 'img', path.basename(producto.imagen_url));
         if (fs.existsSync(rutaAnterior)) fs.unlinkSync(rutaAnterior);
       }
-      actualizar.imagen_url = `${DOMAIN}/uploads/img/${req.file.filename}`;
+      actualizar.imagen_url = `${req.protocol}://${req.get('host')}/uploads/img/${req.file.filename}`;
     }
 
     const actualizado = await Producto.findByIdAndUpdate(req.params.id, actualizar, { new: true });
