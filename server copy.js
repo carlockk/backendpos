@@ -15,15 +15,11 @@ const ticketRoutes = require('./routes/ticket.routes.js');
 dotenv.config();
 
 const app = express();
+//const PORT = process.env.PORT || 5000;
 const PORT = process.env.PORT || 8080;
 
-// 🛡️ Configuración de CORS
-const corsOptions = {
-  origin: ['https://frontpos.vercel.app', 'http://localhost:5173'], // 🚨 Ajusta a la URL de tu frontend
-  credentials: true,
-};
-app.use(cors(corsOptions));
-
+// Middleware
+app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
