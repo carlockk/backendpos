@@ -19,7 +19,11 @@ const PORT = process.env.PORT || 8080;
 
 // 🛡️ Configuración de CORS
 const corsOptions = {
-  origin: ['https://frontpos.vercel.app', 'http://localhost:5173'], // 🚨 Ajusta a la URL de tu frontend
+  origin: [
+    'https://frontpos.vercel.app',
+    'https://frontpos-lfzfdsel6-carlos-projects-1d540488.vercel.app',
+    'http://localhost:5173'
+  ],
   credentials: true,
 };
 app.use(cors(corsOptions));
