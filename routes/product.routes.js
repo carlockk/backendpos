@@ -7,7 +7,7 @@ const Producto = require('../models/product.model.js');
 const router = express.Router();
 
 // 🟢 Configura el dominio completo del backend (Railway)
-const DOMAIN = 'https://web-production-1d6f4.up.railway.app'; // Cambiar por tu dominio Railway real
+const DOMAIN = 'web-production-1d6f4.up.railway.app'; // Cambiar por tu dominio Railway real
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
