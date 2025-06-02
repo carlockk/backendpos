@@ -17,16 +17,8 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// 🛡️ Configuración de CORS
-const corsOptions = {
-  origin: [
-    'https://frontpos.vercel.app',
-    'https://frontpos-lfzfdsel6-carlos-projects-1d540488.vercel.app',
-    'http://localhost:5173'
-  ],
-  credentials: true,
-};
-app.use(cors(corsOptions));
+// 🛡️ CORS Temporalmente Abierto para todos los orígenes
+app.use(cors({ origin: '*', credentials: true }));
 
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -42,8 +34,8 @@ app.use('/api/tickets', ticketRoutes);
 
 // Conexión a MongoDB
 mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
+  //useNewUrlParser: true,
+  //useUnifiedTopology: true
 }).then(() => {
   console.log('✅ Conectado a MongoDB');
   app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));
