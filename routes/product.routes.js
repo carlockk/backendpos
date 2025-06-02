@@ -6,9 +6,6 @@ const Producto = require('../models/product.model.js');
 
 const router = express.Router();
 
-// 🔥 Elimina esta línea estática, ya no se necesita:
-// const DOMAIN = 'https://web-production-1d6f4.up.railway.app';
-
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = 'uploads/img';
@@ -29,6 +26,9 @@ const upload = multer({ storage });
 // ✅ CREAR PRODUCTO
 router.post('/', upload.single('imagen'), async (req, res) => {
   try {
+    console.log('📥 Request Body:', req.body);
+    console.log('📸 Uploaded File:', req.file);
+
     const imagen_url = req.file
       ? `${req.protocol}://${req.get('host')}/uploads/img/${req.file.filename}`
       : '';
@@ -48,11 +48,15 @@ router.post('/', upload.single('imagen'), async (req, res) => {
       categoria: req.body.categoria || null
     });
 
+    console.log('📤 Producto a guardar:', nuevo);
+
     const guardado = await nuevo.save();
+    console.log('✅ Producto guardado correctamente:', guardado);
+
     res.status(201).json(guardado);
   } catch (err) {
     console.error('❌ Error al crear producto:', err);
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: err.message, details: err });
   }
 });
 
@@ -95,6 +99,9 @@ router.delete('/:id', async (req, res) => {
 // ✅ EDITAR PRODUCTO
 router.put('/:id', upload.single('imagen'), async (req, res) => {
   try {
+    console.log('✏️ Request Body (Editar):', req.body);
+    console.log('📸 Uploaded File (Editar):', req.file);
+
     const producto = await Producto.findById(req.params.id);
     if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
 
@@ -125,11 +132,15 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
       actualizar.imagen_url = `${req.protocol}://${req.get('host')}/uploads/img/${req.file.filename}`;
     }
 
+    console.log('✏️ Datos a actualizar:', actualizar);
+
     const actualizado = await Producto.findByIdAndUpdate(req.params.id, actualizar, { new: true });
+    console.log('✅ Producto actualizado correctamente:', actualizado);
+
     res.json(actualizado);
   } catch (err) {
     console.error('❌ Error al editar producto:', err);
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: err.message, details: err });
   }
 });
 
