@@ -6,16 +6,18 @@ dotenv.config();
 
 await mongoose.connect(process.env.MONGO_URI);
 
-const email = 'admin@pos.com';
-const password = 'admin123'; // Sin hashear
+const email = 'nicolas3@3.cl';
+const password = '123456'; // Sin hashear
+const nombre = 'Nicolas Admin'; // ✅ Nuevo campo requerido
 const yaExiste = await Usuario.findOne({ email });
 
 if (yaExiste) {
   yaExiste.password = password;
+  yaExiste.nombre = nombre; // ✅ Actualiza también el nombre
   await yaExiste.save();
-  console.log('🔁 Contraseña actualizada');
+  console.log('🔁 Contraseña y nombre actualizados');
 } else {
-  await Usuario.create({ email, password, rol: 'admin' });
+  await Usuario.create({ email, password, nombre, rol: 'admin' });
   console.log('✅ Usuario admin creado');
 }
 

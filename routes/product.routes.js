@@ -6,6 +6,9 @@ const Producto = require('../models/product.model.js');
 
 const router = express.Router();
 
+// 🟢 Configura el dominio completo del backend (Railway)
+const DOMAIN = 'https://web-production-1d6f4.up.railway.app'; // Cambiar por tu dominio Railway real
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = 'uploads/img';
@@ -26,7 +29,7 @@ const upload = multer({ storage });
 // ✅ CREAR PRODUCTO
 router.post('/', upload.single('imagen'), async (req, res) => {
   try {
-    const imagen_url = req.file ? `/uploads/img/${req.file.filename}` : '';
+    const imagen_url = req.file ? `${DOMAIN}/uploads/img/${req.file.filename}` : '';
 
     let stock = null;
     if ('stock' in req.body) {
@@ -77,7 +80,7 @@ router.get('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const producto = await Producto.findByIdAndDelete(req.params.id);
-    if (producto?.imagen_url?.startsWith('/uploads/img/')) {
+    if (producto?.imagen_url?.includes('/uploads/img/')) {
       const ruta = path.join('uploads', 'img', path.basename(producto.imagen_url));
       if (fs.existsSync(ruta)) fs.unlinkSync(ruta);
     }
@@ -113,11 +116,11 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
     }
 
     if (req.file) {
-      if (producto.imagen_url?.startsWith('/uploads/img/')) {
+      if (producto.imagen_url?.includes('/uploads/img/')) {
         const rutaAnterior = path.join('uploads', 'img', path.basename(producto.imagen_url));
         if (fs.existsSync(rutaAnterior)) fs.unlinkSync(rutaAnterior);
       }
-      actualizar.imagen_url = `/uploads/img/${req.file.filename}`;
+      actualizar.imagen_url = `${DOMAIN}/uploads/img/${req.file.filename}`;
     }
 
     const actualizado = await Producto.findByIdAndUpdate(req.params.id, actualizar, { new: true });
