@@ -14,9 +14,12 @@ const authRoutes = require('./routes/auth.routes.js');
 const usuarioRoutes = require('./routes/usuario.routes.js');
 const categoriaRoutes = require('./routes/categoria.routes.js');
 const ticketRoutes = require('./routes/ticket.routes.js');
+const clienteRoutes = require('./routes/cliente.routes');
+
+
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 5000;
 
 // 🌍 Mostrar MONGO_URI para depuración (puedes quitarlo después)
 console.log('🌍 MONGO_URI:', process.env.MONGO_URI);
@@ -38,6 +41,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/usuarios', usuarioRoutes);
 app.use('/api/categorias', categoriaRoutes);
 app.use('/api/tickets', ticketRoutes);
+app.use('/api/clientes', clienteRoutes);
+
 
 // Conexión a MongoDB Atlas (posaildb)
 mongoose.connect(process.env.MONGO_URI, {
