@@ -86,5 +86,60 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// Obtener todos los clientes
+router.get('/todos', async (req, res) => {
+  try {
+    const clientes = await Cliente.find().select('-password'); // sin contraseñas
+    res.json(clientes);
+  } catch (error) {
+    res.status(500).json({ msg: 'Error al obtener clientes', error });
+  }
+});
+
+// Middleware para verificar token
+const authMiddleware = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ msg: 'Token no proporcionado' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.clienteId = decoded.id;
+    next();
+  } catch (err) {
+    return res.status(401).json({ msg: 'Token inválido' });
+  }
+};
+
+// Ruta protegida: ver perfil del cliente autenticado
+router.get('/perfil', authMiddleware, async (req, res) => {
+  try {
+    const cliente = await Cliente.findById(req.clienteId).select('-password');
+    if (!cliente) return res.status(404).json({ msg: 'Cliente no encontrado' });
+    res.json(cliente);
+  } catch (error) {
+    res.status(500).json({ msg: 'Error al obtener perfil', error });
+  }
+});
+
+
+// Actualizar perfil del cliente
+router.put('/perfil', authMiddleware, async (req, res) => {
+  try {
+    const updated = await Cliente.findByIdAndUpdate(
+      req.clienteId,
+      {
+        nombre: req.body.nombre,
+        direccion: req.body.direccion,
+        telefono: req.body.telefono
+      },
+      { new: true }
+    ).select('-password');
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ msg: 'Error al actualizar perfil', error: err });
+  }
+});
+
 
 module.exports = router;
