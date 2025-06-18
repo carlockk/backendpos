@@ -8,11 +8,13 @@ const nodemailer = require("nodemailer");
 // Crear una nueva venta (checkout)
 router.post("/", authMiddleware, async (req, res) => {
   try {
-    const last = await VentaCliente.findOne().sort({ numero_pedido: -1 });
-    const numero_pedido = last ? last.numero_pedido + 1 : 1;
+    const last = await VentaCliente.findOne().sort({ numero_pedido_numerico: -1 });
+    const numero_pedido_numerico = last ? last.numero_pedido_numerico + 1 : 1;
+    const numero_pedido = (numero_pedido_numerico % 10000).toString().padStart(4, "0");
 
     const nuevaVenta = new VentaCliente({
       numero_pedido,
+      numero_pedido_numerico,
       productos: req.body.productos,
       total: req.body.total,
       tipo_pago: req.body.tipo_pago,
