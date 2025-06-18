@@ -2,16 +2,14 @@ const express = require("express");
 const router = express.Router();
 const VentaCliente = require("../models/ventaCliente.model");
 const authMiddleware = require("../middlewares/auth");
+const Cliente = require("../models/Cliente");
 const nodemailer = require("nodemailer");
 
 // Crear una nueva venta (checkout)
 router.post("/", authMiddleware, async (req, res) => {
   try {
-    // Formato de número de pedido de 4 dígitos (ej: 0001, 0002)
     const last = await VentaCliente.findOne().sort({ numero_pedido: -1 });
-    let siguienteNumero = last ? last.numero_pedido + 1 : 1;
-    if (siguienteNumero > 9999) siguienteNumero = 1;
-    const numero_pedido = String(siguienteNumero).padStart(4, "0");
+    const numero_pedido = last ? last.numero_pedido + 1 : 1;
 
     const nuevaVenta = new VentaCliente({
       numero_pedido,
@@ -25,12 +23,11 @@ router.post("/", authMiddleware, async (req, res) => {
     const ventaGuardada = await nuevaVenta.save();
     res.status(201).json(ventaGuardada);
   } catch (error) {
-    console.error("❌ Error al registrar venta:", error);
     res.status(500).json({ msg: "Error al registrar venta", error });
   }
 });
 
-// Historial del cliente autenticado
+// Historial del cliente
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const historial = await VentaCliente.find({ cliente_id: req.clienteId }).sort({ fecha: -1 });
@@ -43,11 +40,7 @@ router.get("/", authMiddleware, async (req, res) => {
 // Detalle de una venta específica
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
-    const venta = await VentaCliente.findOne({
-      _id: req.params.id,
-      cliente_id: req.clienteId,
-    });
-
+    const venta = await VentaCliente.findOne({ _id: req.params.id, cliente_id: req.clienteId });
     if (!venta) return res.status(404).json({ msg: "Venta no encontrada" });
     res.json(venta);
   } catch (error) {
@@ -55,7 +48,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// Enviar ticket por correo al cliente y al negocio
+// Enviar ticket por correo (cliente + copia al negocio)
 router.post("/enviar/:id", authMiddleware, async (req, res) => {
   try {
     const venta = await VentaCliente.findOne({
@@ -82,14 +75,18 @@ router.post("/enviar/:id", authMiddleware, async (req, res) => {
           </tr>
         </thead>
         <tbody>
-          ${venta.productos.map((p) => `
+          ${venta.productos
+            .map(
+              (p) => `
             <tr>
               <td>${p.nombre}</td>
               <td>${p.cantidad}</td>
               <td>$${p.precio_unitario}</td>
               <td>$${p.subtotal}</td>
             </tr>
-          `).join("")}
+          `
+            )
+            .join("")}
         </tbody>
       </table>
       <p><strong>Total:</strong> $${venta.total}</p>
@@ -103,7 +100,7 @@ router.post("/enviar/:id", authMiddleware, async (req, res) => {
       },
     });
 
-    // Enviar correo al cliente
+    // Enviar al cliente
     await transporter.sendMail({
       from: `"AutoPedido" <${process.env.EMAIL_USER}>`,
       to: clienteEmail,
@@ -111,7 +108,7 @@ router.post("/enviar/:id", authMiddleware, async (req, res) => {
       html,
     });
 
-    // Enviar copia al negocio
+    // Copia al negocio
     await transporter.sendMail({
       from: `"AutoPedido" <${process.env.EMAIL_USER}>`,
       to: adminEmail,
@@ -121,7 +118,7 @@ router.post("/enviar/:id", authMiddleware, async (req, res) => {
 
     res.json({ msg: "Correo enviado correctamente." });
   } catch (err) {
-    console.error("❌ Error al enviar correo:", err);
+    console.error("Error al enviar correo:", err);
     res.status(500).json({ msg: "Error al enviar correo", err });
   }
 });
