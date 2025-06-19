@@ -30,8 +30,9 @@ router.post('/', upload.single('imagen'), async (req, res) => {
     console.log('📸 Uploaded File:', req.file);
 
     const imagen_url = req.file
-      ? `${req.protocol}://${req.get('host')}/uploads/img/${req.file.filename}`
-      : '';
+  ? `https://backendpos-yyy5.onrender.com/uploads/img/${req.file.filename}`
+  : '';
+
 
     let stock = null;
     if ('stock' in req.body) {
@@ -129,7 +130,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         const rutaAnterior = path.join('uploads', 'img', path.basename(producto.imagen_url));
         if (fs.existsSync(rutaAnterior)) fs.unlinkSync(rutaAnterior);
       }
-      actualizar.imagen_url = `${req.protocol}://${req.get('host')}/uploads/img/${req.file.filename}`;
+      actualizar.imagen_url = `https://backendpos-yyy5.onrender.com/uploads/img/${req.file.filename}`;
     }
 
     console.log('✏️ Datos a actualizar:', actualizar);
