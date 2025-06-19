@@ -18,7 +18,8 @@ const clienteRoutes = require("./routes/cliente.routes");
 const ventaClienteRoutes = require("./routes/ventaCliente.routes");
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+//const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 10000;
 
 // 🌍 Mostrar MONGO_URI para depuración (puedes quitarlo después)
 console.log("🌍 MONGO_URI:", process.env.MONGO_URI);
