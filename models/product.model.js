@@ -6,6 +6,7 @@ const productSchema = new mongoose.Schema({
   precio: { type: Number, required: true },
   stock: { type: Number, default: 0 },
   imagen_url: String,
+  cloudinary_id: String, // ✅ NUEVO CAMPO
   categoria: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Categoria',
