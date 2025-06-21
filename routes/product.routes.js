@@ -1,38 +1,15 @@
 const express = require('express');
 const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
 const Producto = require('../models/product.model.js');
+const { storage } = require('../utils/cloudinary'); // 👈 Importamos Cloudinary
 
 const router = express.Router();
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = 'uploads/img';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const nombreArchivo = Date.now() + '-' + file.originalname.replace(/\s+/g, '-');
-    cb(null, nombreArchivo);
-  }
-});
-
-const upload = multer({ storage });
+const upload = multer({ storage }); // 👈 Usamos multer con Cloudinary
 
 // ✅ CREAR PRODUCTO
 router.post('/', upload.single('imagen'), async (req, res) => {
   try {
-    console.log('📥 Request Body:', req.body);
-    console.log('📸 Uploaded File:', req.file);
-
-    const imagen_url = req.file
-  ? `https://backendpos-yyy5.onrender.com/uploads/img/${req.file.filename}`
-  : '';
-
+    const imagen_url = req.file?.path || ''; // Cloudinary devuelve la URL en `path`
 
     let stock = null;
     if ('stock' in req.body) {
@@ -49,11 +26,7 @@ router.post('/', upload.single('imagen'), async (req, res) => {
       categoria: req.body.categoria || null
     });
 
-    console.log('📤 Producto a guardar:', nuevo);
-
     const guardado = await nuevo.save();
-    console.log('✅ Producto guardado correctamente:', guardado);
-
     res.status(201).json(guardado);
   } catch (err) {
     console.error('❌ Error al crear producto:', err);
@@ -87,10 +60,7 @@ router.get('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const producto = await Producto.findByIdAndDelete(req.params.id);
-    if (producto?.imagen_url?.includes('/uploads/img/')) {
-      const ruta = path.join('uploads', 'img', path.basename(producto.imagen_url));
-      if (fs.existsSync(ruta)) fs.unlinkSync(ruta);
-    }
+    // Opcional: podrías eliminar la imagen de Cloudinary si guardas su public_id
     res.json(producto);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -100,9 +70,6 @@ router.delete('/:id', async (req, res) => {
 // ✅ EDITAR PRODUCTO
 router.put('/:id', upload.single('imagen'), async (req, res) => {
   try {
-    console.log('✏️ Request Body (Editar):', req.body);
-    console.log('📸 Uploaded File (Editar):', req.file);
-
     const producto = await Producto.findById(req.params.id);
     if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
 
@@ -110,34 +77,20 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
       nombre: req.body.nombre,
       descripcion: req.body.descripcion,
       precio: parseFloat(req.body.precio),
-      categoria: req.body.categoria || null
+      categoria: req.body.categoria || null,
     };
 
     if ('stock' in req.body) {
       const s = req.body.stock;
       const parsed = parseInt(s);
-      if (s === '' || s === undefined || isNaN(parsed)) {
-        actualizar.stock = null;
-        console.log('🟠 Stock se guardará como null');
-      } else {
-        actualizar.stock = parsed;
-        console.log('🟢 Stock actualizado a:', parsed);
-      }
+      actualizar.stock = (s === '' || s === undefined || isNaN(parsed)) ? null : parsed;
     }
 
     if (req.file) {
-      if (producto.imagen_url?.includes('/uploads/img/')) {
-        const rutaAnterior = path.join('uploads', 'img', path.basename(producto.imagen_url));
-        if (fs.existsSync(rutaAnterior)) fs.unlinkSync(rutaAnterior);
-      }
-      actualizar.imagen_url = `https://backendpos-yyy5.onrender.com/uploads/img/${req.file.filename}`;
+      actualizar.imagen_url = req.file.path; // Cloudinary devuelve la URL en `path`
     }
 
-    console.log('✏️ Datos a actualizar:', actualizar);
-
     const actualizado = await Producto.findByIdAndUpdate(req.params.id, actualizar, { new: true });
-    console.log('✅ Producto actualizado correctamente:', actualizado);
-
     res.json(actualizado);
   } catch (err) {
     console.error('❌ Error al editar producto:', err);
