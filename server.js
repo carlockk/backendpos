@@ -16,6 +16,8 @@ const categoriaRoutes = require("./routes/categoria.routes.js");
 const ticketRoutes = require("./routes/ticket.routes.js");
 const clienteRoutes = require("./routes/cliente.routes");
 const ventaClienteRoutes = require("./routes/ventaCliente.routes");
+const pagosRoutes = require('./routes/pagos.routes');
+
 
 const app = express();
 //const PORT = process.env.PORT || 5000;
@@ -43,6 +45,7 @@ app.use("/api/categorias", categoriaRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/clientes", clienteRoutes);
 app.use("/api/ventasCliente", ventaClienteRoutes);
+app.use('/api/pagos', pagosRoutes);
 
 // Conexión a MongoDB Atlas (posaildb)
 mongoose
