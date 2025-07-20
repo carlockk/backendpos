@@ -6,7 +6,45 @@ const { subirImagen, eliminarImagen } = require("../utils/cloudinary");
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() }); // Guarda la imagen temporalmente en memoria
 
-// ✅ CREAR PRODUCTO
+/**
+ * @swagger
+ * tags:
+ *   name: Productos
+ *   description: Endpoints para gestión de productos
+ */
+
+/**
+ * @swagger
+ * /productos:
+ *   post:
+ *     summary: Crear un nuevo producto
+ *     tags: [Productos]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *               descripcion:
+ *                 type: string
+ *               precio:
+ *                 type: number
+ *               stock:
+ *                 type: integer
+ *               imagen:
+ *                 type: string
+ *                 format: binary
+ *               categoria:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Producto creado exitosamente
+ *       400:
+ *         description: Error al crear producto
+ */
 router.post("/", upload.single("imagen"), async (req, res) => {
   try {
     let imagen_url = "";
@@ -38,7 +76,18 @@ router.post("/", upload.single("imagen"), async (req, res) => {
   }
 });
 
-// ✅ LISTAR PRODUCTOS
+/**
+ * @swagger
+ * /productos:
+ *   get:
+ *     summary: Obtener todos los productos
+ *     tags: [Productos]
+ *     responses:
+ *       200:
+ *         description: Lista de productos
+ *       500:
+ *         description: Error al obtener productos
+ */
 router.get("/", async (req, res) => {
   try {
     const productos = await Producto.find()
@@ -50,7 +99,25 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ✅ OBTENER PRODUCTO POR ID
+/**
+ * @swagger
+ * /productos/{id}:
+ *   get:
+ *     summary: Obtener un producto por ID
+ *     tags: [Productos]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: ID del producto
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Producto encontrado
+ *       404:
+ *         description: Producto no encontrado
+ */
 router.get("/:id", async (req, res) => {
   try {
     const producto = await Producto.findById(req.params.id).populate("categoria", "nombre");
@@ -60,7 +127,45 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// ✅ EDITAR PRODUCTO
+/**
+ * @swagger
+ * /productos/{id}:
+ *   put:
+ *     summary: Actualizar un producto
+ *     tags: [Productos]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: ID del producto
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *               descripcion:
+ *                 type: string
+ *               precio:
+ *                 type: number
+ *               stock:
+ *                 type: integer
+ *               imagen:
+ *                 type: string
+ *                 format: binary
+ *               categoria:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Producto actualizado
+ *       400:
+ *         description: Error al actualizar
+ */
 router.put("/:id", upload.single("imagen"), async (req, res) => {
   try {
     const producto = await Producto.findById(req.params.id);
@@ -96,7 +201,25 @@ router.put("/:id", upload.single("imagen"), async (req, res) => {
   }
 });
 
-// ✅ ELIMINAR PRODUCTO
+/**
+ * @swagger
+ * /productos/{id}:
+ *   delete:
+ *     summary: Eliminar un producto
+ *     tags: [Productos]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: ID del producto a eliminar
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Producto eliminado
+ *       400:
+ *         description: Error al eliminar
+ */
 router.delete("/:id", async (req, res) => {
   try {
     const producto = await Producto.findByIdAndDelete(req.params.id);

@@ -3,7 +3,14 @@ const mongoose = require('mongoose');
 
 const router = express.Router();
 
-// Modelo interno temporal (puedes separarlo si quieres)
+/**
+ * @swagger
+ * tags:
+ *   name: Tickets
+ *   description: Gestión de tickets emitidos
+ */
+
+// Modelo interno temporal (puedes moverlo a models si prefieres)
 const ticketSchema = new mongoose.Schema({
   nombre: String,
   productos: [
@@ -24,7 +31,57 @@ const ticketSchema = new mongoose.Schema({
 
 const Ticket = mongoose.model('Ticket', ticketSchema);
 
-// 🟢 Guardar un ticket
+/**
+ * @swagger
+ * /tickets:
+ *   post:
+ *     summary: Crear un nuevo ticket
+ *     tags: [Tickets]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - nombre
+ *               - productos
+ *               - total
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 example: "Mesa 4"
+ *               total:
+ *                 type: number
+ *                 example: 123.45
+ *               productos:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     productoId:
+ *                       type: string
+ *                       example: "60d...abc"
+ *                     nombre:
+ *                       type: string
+ *                       example: "Coca Cola"
+ *                     precio_unitario:
+ *                       type: number
+ *                       example: 1500
+ *                     cantidad:
+ *                       type: integer
+ *                       example: 2
+ *                     observacion:
+ *                       type: string
+ *                       example: "Sin hielo"
+ *     responses:
+ *       201:
+ *         description: Ticket guardado
+ *       400:
+ *         description: Datos incompletos
+ *       500:
+ *         description: Error al guardar ticket
+ */
 router.post('/', async (req, res) => {
   const { nombre, productos, total } = req.body;
 
@@ -41,7 +98,18 @@ router.post('/', async (req, res) => {
   }
 });
 
-// 🟡 Obtener todos los tickets
+/**
+ * @swagger
+ * /tickets:
+ *   get:
+ *     summary: Obtener todos los tickets
+ *     tags: [Tickets]
+ *     responses:
+ *       200:
+ *         description: Lista de tickets
+ *       500:
+ *         description: Error al obtener tickets
+ */
 router.get('/', async (req, res) => {
   try {
     const tickets = await Ticket.find().sort({ creado: -1 });
@@ -51,7 +119,25 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 🔴 Eliminar un ticket
+/**
+ * @swagger
+ * /tickets/{id}:
+ *   delete:
+ *     summary: Eliminar un ticket por ID
+ *     tags: [Tickets]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: ID del ticket a eliminar
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Ticket eliminado
+ *       500:
+ *         description: Error al eliminar ticket
+ */
 router.delete('/:id', async (req, res) => {
   try {
     await Ticket.findByIdAndDelete(req.params.id);

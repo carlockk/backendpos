@@ -4,7 +4,37 @@ const Venta = require('../models/venta.model.js');
 
 const router = express.Router();
 
-// Abrir caja
+/**
+ * @swagger
+ * tags:
+ *   name: Caja
+ *   description: Gestión de apertura y cierre de caja
+ */
+
+/**
+ * @swagger
+ * /caja/abrir:
+ *   post:
+ *     summary: Abrir una nueva caja
+ *     tags: [Caja]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               monto_inicial:
+ *                 type: number
+ *                 example: 10000
+ *     responses:
+ *       200:
+ *         description: Caja abierta exitosamente
+ *       400:
+ *         description: Error por monto inválido o caja ya abierta
+ *       500:
+ *         description: Error del servidor
+ */
 router.post('/abrir', async (req, res) => {
   try {
     const monto = parseFloat(req.body.monto_inicial);
@@ -27,7 +57,30 @@ router.post('/abrir', async (req, res) => {
   }
 });
 
-// Cerrar caja
+/**
+ * @swagger
+ * /caja/cerrar:
+ *   post:
+ *     summary: Cerrar la caja abierta actual
+ *     tags: [Caja]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 example: Carlos
+ *     responses:
+ *       200:
+ *         description: Caja cerrada con resumen
+ *       400:
+ *         description: No hay caja abierta
+ *       500:
+ *         description: Error al cerrar caja
+ */
 router.post('/cerrar', async (req, res) => {
   try {
     const caja = await Caja.findOne({ cierre: null });
@@ -68,7 +121,18 @@ router.post('/cerrar', async (req, res) => {
   }
 });
 
-// Historial
+/**
+ * @swagger
+ * /caja/historial:
+ *   get:
+ *     summary: Obtener historial de todas las cajas
+ *     tags: [Caja]
+ *     responses:
+ *       200:
+ *         description: Lista de cajas obtenida exitosamente
+ *       500:
+ *         description: Error al obtener historial
+ */
 router.get('/historial', async (_req, res) => {
   try {
     const cajas = await Caja.find().sort({ apertura: -1 });

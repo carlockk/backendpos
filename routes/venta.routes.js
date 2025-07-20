@@ -3,7 +3,31 @@ const Venta = require('../models/venta.model.js');
 
 const router = express.Router();
 
-// ✅ Obtener todas las ventas (historial)
+/**
+ * @swagger
+ * tags:
+ *   name: Ventas
+ *   description: Gestión de ventas del sistema POS
+ */
+
+/**
+ * @swagger
+ * /ventas:
+ *   get:
+ *     summary: Obtener historial de todas las ventas
+ *     tags: [Ventas]
+ *     responses:
+ *       200:
+ *         description: Lista de ventas ordenadas por fecha descendente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *       500:
+ *         description: Error interno del servidor
+ */
 router.get('/', async (req, res) => {
   try {
     const ventas = await Venta.find().sort({ fecha: -1 });
@@ -14,7 +38,38 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ✅ Obtener resumen por fecha para el dashboard
+/**
+ * @swagger
+ * /ventas/resumen:
+ *   get:
+ *     summary: Obtener resumen de ventas por fecha
+ *     tags: [Ventas]
+ *     parameters:
+ *       - name: fecha
+ *         in: query
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: "2024-07-19"
+ *     responses:
+ *       200:
+ *         description: Resumen con total, cantidad y pagos por tipo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 total:
+ *                   type: number
+ *                 cantidad:
+ *                   type: number
+ *                 porTipoPago:
+ *                   type: object
+ *       400:
+ *         description: Fecha requerida
+ *       500:
+ *         description: Error interno del servidor
+ */
 router.get('/resumen', async (req, res) => {
   const { fecha } = req.query;
 
@@ -43,7 +98,33 @@ router.get('/resumen', async (req, res) => {
   }
 });
 
-// ✅ NUEVO: Obtener resumen por rango de fechas
+/**
+ * @swagger
+ * /ventas/resumen-rango:
+ *   get:
+ *     summary: Obtener resumen de ventas por rango de fechas
+ *     tags: [Ventas]
+ *     parameters:
+ *       - name: inicio
+ *         in: query
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: "2024-07-01"
+ *       - name: fin
+ *         in: query
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: "2024-07-31"
+ *     responses:
+ *       200:
+ *         description: Resumen con total, cantidad y pagos por tipo
+ *       400:
+ *         description: Fechas requeridas
+ *       500:
+ *         description: Error interno
+ */
 router.get('/resumen-rango', async (req, res) => {
   const { inicio, fin } = req.query;
 
@@ -72,7 +153,35 @@ router.get('/resumen-rango', async (req, res) => {
   }
 });
 
-// ✅ Registrar una venta
+/**
+ * @swagger
+ * /ventas:
+ *   post:
+ *     summary: Registrar una nueva venta
+ *     tags: [Ventas]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               productos:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *               total:
+ *                 type: number
+ *               tipo_pago:
+ *                 type: string
+ *               tipo_pedido:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Venta registrada exitosamente
+ *       500:
+ *         description: Error al registrar venta
+ */
 router.post('/', async (req, res) => {
   try {
     const { productos, total, tipo_pago, tipo_pedido } = req.body;

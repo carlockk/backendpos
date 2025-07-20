@@ -3,7 +3,25 @@ const Categoria = require('../models/categoria.model.js');
 
 const router = express.Router();
 
-// ✅ Obtener todas las categorías
+/**
+ * @swagger
+ * tags:
+ *   name: Categorías
+ *   description: Operaciones CRUD para categorías
+ */
+
+/**
+ * @swagger
+ * /categorias:
+ *   get:
+ *     summary: Obtener todas las categorías
+ *     tags: [Categorías]
+ *     responses:
+ *       200:
+ *         description: Lista de categorías
+ *       500:
+ *         description: Error al obtener categorías
+ */
 router.get('/', async (req, res) => {
   try {
     const categorias = await Categoria.find().sort({ nombre: 1 });
@@ -13,7 +31,27 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ✅ Obtener una categoría por ID
+/**
+ * @swagger
+ * /categorias/{id}:
+ *   get:
+ *     summary: Obtener una categoría por ID
+ *     tags: [Categorías]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID de la categoría
+ *     responses:
+ *       200:
+ *         description: Categoría encontrada
+ *       404:
+ *         description: Categoría no encontrada
+ *       500:
+ *         description: Error en el servidor
+ */
 router.get('/:id', async (req, res) => {
   try {
     const categoria = await Categoria.findById(req.params.id);
@@ -26,7 +64,35 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// ✅ Crear nueva categoría
+/**
+ * @swagger
+ * /categorias:
+ *   post:
+ *     summary: Crear nueva categoría
+ *     tags: [Categorías]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - nombre
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 example: Bebidas
+ *               descripcion:
+ *                 type: string
+ *                 example: Productos líquidos para consumo
+ *     responses:
+ *       201:
+ *         description: Categoría creada exitosamente
+ *       400:
+ *         description: Validación fallida o ya existe
+ *       500:
+ *         description: Error al crear categoría
+ */
 router.post('/', async (req, res) => {
   try {
     const { nombre, descripcion } = req.body;
@@ -52,7 +118,42 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ✅ Editar categoría existente
+/**
+ * @swagger
+ * /categorias/{id}:
+ *   put:
+ *     summary: Editar una categoría existente
+ *     tags: [Categorías]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID de la categoría
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 example: Comidas
+ *               descripcion:
+ *                 type: string
+ *                 example: Productos sólidos para consumo
+ *     responses:
+ *       200:
+ *         description: Categoría actualizada
+ *       400:
+ *         description: Validación fallida o nombre duplicado
+ *       404:
+ *         description: Categoría no encontrada
+ *       500:
+ *         description: Error del servidor
+ */
 router.put('/:id', async (req, res) => {
   try {
     const { nombre, descripcion } = req.body;
@@ -66,7 +167,6 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Categoría no encontrada' });
     }
 
-    // Verifica si el nuevo nombre ya está en uso por otra categoría
     const existe = await Categoria.findOne({ nombre: nombre.trim(), _id: { $ne: req.params.id } });
     if (existe) {
       return res.status(400).json({ error: 'Ya existe otra categoría con ese nombre' });
@@ -82,7 +182,27 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// ✅ Eliminar categoría
+/**
+ * @swagger
+ * /categorias/{id}:
+ *   delete:
+ *     summary: Eliminar una categoría
+ *     tags: [Categorías]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID de la categoría
+ *     responses:
+ *       200:
+ *         description: Categoría eliminada correctamente
+ *       404:
+ *         description: Categoría no encontrada
+ *       500:
+ *         description: Error al eliminar categoría
+ */
 router.delete('/:id', async (req, res) => {
   try {
     const categoria = await Categoria.findById(req.params.id);

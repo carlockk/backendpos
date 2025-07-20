@@ -1,10 +1,47 @@
 const express = require("express");
 const router = express.Router();
 const VentaCliente = require("../models/ventaCliente.model");
-const authMiddleware = require("../middlewares/auth"); // asegúrate de tener este middleware
+const authMiddleware = require("../middlewares/auth");
 const Cliente = require("../models/Cliente");
 
-// Crear una nueva venta (checkout)
+/**
+ * @swagger
+ * tags:
+ *   name: VentasCliente
+ *   description: Ventas realizadas por los clientes autenticados
+ */
+
+/**
+ * @swagger
+ * /ventasCliente:
+ *   post:
+ *     summary: Registrar una nueva venta desde el cliente
+ *     tags: [VentasCliente]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               productos:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *               total:
+ *                 type: number
+ *               tipo_pago:
+ *                 type: string
+ *               cliente_email:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Venta registrada exitosamente
+ *       500:
+ *         description: Error al registrar venta
+ */
 router.post("/", authMiddleware, async (req, res) => {
   try {
     const last = await VentaCliente.findOne().sort({ numero_pedido: -1 });
@@ -26,7 +63,20 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// Historial del cliente
+/**
+ * @swagger
+ * /ventasCliente:
+ *   get:
+ *     summary: Obtener historial de compras del cliente autenticado
+ *     tags: [VentasCliente]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de ventas del cliente
+ *       500:
+ *         description: Error al obtener historial
+ */
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const historial = await VentaCliente.find({ cliente_id: req.clienteId }).sort({ fecha: -1 });
@@ -36,7 +86,29 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// Detalle de una venta específica
+/**
+ * @swagger
+ * /ventasCliente/{id}:
+ *   get:
+ *     summary: Obtener detalle de una venta específica del cliente
+ *     tags: [VentasCliente]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: ID de la venta
+ *     responses:
+ *       200:
+ *         description: Detalles de la venta
+ *       404:
+ *         description: Venta no encontrada
+ *       500:
+ *         description: Error al obtener la venta
+ */
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
     const venta = await VentaCliente.findOne({ _id: req.params.id, cliente_id: req.clienteId });
