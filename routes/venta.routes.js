@@ -1,5 +1,8 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Venta = require('../models/venta.model.js');
+const Producto = require('../models/product.model.js');
+const Caja = require('../models/caja.model.js');
 
 const router = express.Router();
 
@@ -183,23 +186,96 @@ router.get('/resumen-rango', async (req, res) => {
  *         description: Error al registrar venta
  */
 router.post('/', async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
+    session.startTransaction();
+
     const { productos, total, tipo_pago, tipo_pedido } = req.body;
 
+    if (!Array.isArray(productos) || productos.length === 0) {
+      const error = new Error('La venta debe incluir al menos un producto.');
+      error.status = 400;
+      throw error;
+    }
+
+    const totalNumerico = Number(total);
+    if (Number.isNaN(totalNumerico) || totalNumerico < 0) {
+      const error = new Error('El total de la venta es inválido.');
+      error.status = 400;
+      throw error;
+    }
+
+    const cajaAbierta = await Caja.findOne({ cierre: null }).session(session);
+    if (!cajaAbierta) {
+      const error = new Error('Debes abrir la caja antes de registrar ventas.');
+      error.status = 400;
+      throw error;
+    }
+
+    const productosRegistrados = [];
+
+    for (const item of productos) {
+      if (!item?.productoId) {
+        const error = new Error('Cada producto debe incluir su identificador.');
+        error.status = 400;
+        throw error;
+      }
+
+      const cantidadSolicitada = Number(item.cantidad);
+      if (!Number.isFinite(cantidadSolicitada) || cantidadSolicitada <= 0) {
+        const error = new Error('La cantidad solicitada debe ser mayor que 0.');
+        error.status = 400;
+        throw error;
+      }
+
+      const producto = await Producto.findById(item.productoId).session(session);
+      if (!producto) {
+        const error = new Error('Producto no encontrado.');
+        error.status = 404;
+        throw error;
+      }
+
+      const controlaStock = typeof producto.stock === 'number' && !Number.isNaN(producto.stock);
+      if (controlaStock) {
+        if (producto.stock < cantidadSolicitada) {
+          const error = new Error(`Stock insuficiente para ${producto.nombre}. Disponible: ${producto.stock}`);
+          error.status = 400;
+          throw error;
+        }
+
+        producto.stock -= cantidadSolicitada;
+        await producto.save({ session });
+      }
+
+      productosRegistrados.push({
+        productoId: producto._id,
+        nombre: producto.nombre,
+        precio_unitario: Number(item.precio_unitario ?? producto.precio) || 0,
+        cantidad: cantidadSolicitada,
+        observacion: item.observacion || ''
+      });
+    }
+
     const venta = new Venta({
-      productos,
-      total,
+      productos: productosRegistrados,
+      total: totalNumerico,
       tipo_pago,
       tipo_pedido,
       fecha: new Date(),
       numero_pedido: Math.floor(Math.random() * 100)
     });
 
-    await venta.save();
+    await venta.save({ session });
+    await session.commitTransaction();
+
     res.json({ mensaje: 'Venta registrada', numero_pedido: venta.numero_pedido });
   } catch (err) {
+    await session.abortTransaction().catch(() => {});
     console.error('Error al registrar venta:', err);
-    res.status(500).json({ error: 'Error interno al registrar venta' });
+    res.status(err.status || 500).json({ error: err.message || 'Error interno al registrar venta' });
+  } finally {
+    session.endSession();
   }
 });
 
