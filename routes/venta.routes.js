@@ -6,6 +6,18 @@ const Caja = require('../models/caja.model.js');
 
 const router = express.Router();
 
+const obtenerAtributosVariante = (variante) => {
+  if (!variante) return [];
+  const atributos = [];
+  if (variante.color) atributos.push({ nombre: 'Color', valor: variante.color });
+  if (variante.talla) atributos.push({ nombre: 'Talla', valor: variante.talla });
+  if (variante.sku) atributos.push({ nombre: 'SKU', valor: variante.sku });
+  return atributos;
+};
+
+const calcularStockDesdeVariantes = (variantes = []) =>
+  variantes.reduce((acc, variante) => acc + (variante.stock || 0), 0);
+
 /**
  * @swagger
  * tags:
@@ -236,24 +248,67 @@ router.post('/', async (req, res) => {
         throw error;
       }
 
-      const controlaStock = typeof producto.stock === 'number' && !Number.isNaN(producto.stock);
-      if (controlaStock) {
-        if (producto.stock < cantidadSolicitada) {
-          const error = new Error(`Stock insuficiente para ${producto.nombre}. Disponible: ${producto.stock}`);
+      const usaVariantes = Array.isArray(producto.variantes) && producto.variantes.length > 0;
+      let varianteSeleccionada = null;
+
+      if (item.varianteId) {
+        varianteSeleccionada = producto.variantes.id(item.varianteId);
+        if (!varianteSeleccionada) {
+          const error = new Error('La variante seleccionada no existe.');
+          error.status = 404;
+          throw error;
+        }
+      }
+
+      if (usaVariantes) {
+        if (!varianteSeleccionada) {
+          const error = new Error(`Debes seleccionar una variante para ${producto.nombre}.`);
           error.status = 400;
           throw error;
         }
 
-        producto.stock -= cantidadSolicitada;
-        await producto.save({ session });
+        if (varianteSeleccionada.stock < cantidadSolicitada) {
+          const error = new Error(
+            `Stock insuficiente para ${producto.nombre} (${varianteSeleccionada.nombre}). Disponible: ${varianteSeleccionada.stock}`
+          );
+          error.status = 400;
+          throw error;
+        }
+
+        varianteSeleccionada.stock -= cantidadSolicitada;
+        producto.stock = calcularStockDesdeVariantes(producto.variantes);
+      } else {
+        const controlaStock = typeof producto.stock === 'number' && !Number.isNaN(producto.stock);
+        if (controlaStock) {
+          if (producto.stock < cantidadSolicitada) {
+            const error = new Error(`Stock insuficiente para ${producto.nombre}. Disponible: ${producto.stock}`);
+            error.status = 400;
+            throw error;
+          }
+
+          producto.stock -= cantidadSolicitada;
+        }
       }
+
+      await producto.save({ session });
+
+      const precioUnitario =
+        Number(
+          item.precio_unitario ??
+            (varianteSeleccionada && varianteSeleccionada.precio !== undefined
+              ? varianteSeleccionada.precio
+              : producto.precio)
+        ) || 0;
 
       productosRegistrados.push({
         productoId: producto._id,
         nombre: producto.nombre,
-        precio_unitario: Number(item.precio_unitario ?? producto.precio) || 0,
+        precio_unitario: precioUnitario,
         cantidad: cantidadSolicitada,
-        observacion: item.observacion || ''
+        observacion: item.observacion || '',
+        varianteId: varianteSeleccionada?._id || null,
+        varianteNombre: item.varianteNombre || varianteSeleccionada?.nombre || null,
+        atributos: obtenerAtributosVariante(varianteSeleccionada)
       });
     }
 

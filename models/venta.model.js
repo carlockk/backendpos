@@ -8,7 +8,15 @@ const ventaSchema = new mongoose.Schema({
       nombre: String,
       precio_unitario: Number,
       cantidad: Number,
-      observacion: String
+      observacion: String,
+      varianteId: mongoose.Schema.Types.ObjectId,
+      varianteNombre: String,
+      atributos: [
+        {
+          nombre: String,
+          valor: String
+        }
+      ]
     }
   ],
   total: Number,

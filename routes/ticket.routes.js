@@ -1,5 +1,5 @@
 const express = require('express');
-const mongoose = require('mongoose');
+const Ticket = require('../models/ticket.model');
 
 const router = express.Router();
 
@@ -9,27 +9,6 @@ const router = express.Router();
  *   name: Tickets
  *   description: Gestión de tickets emitidos
  */
-
-// Modelo interno temporal (puedes moverlo a models si prefieres)
-const ticketSchema = new mongoose.Schema({
-  nombre: String,
-  productos: [
-    {
-      productoId: mongoose.Schema.Types.ObjectId,
-      nombre: String,
-      precio_unitario: Number,
-      cantidad: Number,
-      observacion: String
-    }
-  ],
-  total: Number,
-  creado: {
-    type: Date,
-    default: () => new Date()
-  }
-});
-
-const Ticket = mongoose.model('Ticket', ticketSchema);
 
 /**
  * @swagger

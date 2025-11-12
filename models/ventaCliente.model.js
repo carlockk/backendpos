@@ -6,6 +6,14 @@ const ProductoSchema = new mongoose.Schema({
   cantidad: Number,
   precio_unitario: Number,
   subtotal: Number,
+  varianteId: mongoose.Schema.Types.ObjectId,
+  varianteNombre: String,
+  atributos: [
+    {
+      nombre: String,
+      valor: String
+    }
+  ]
 });
 
 const VentaClienteSchema = new mongoose.Schema({
