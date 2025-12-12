@@ -1,12 +1,12 @@
 // models/product.model.js
-const mongoose = require('mongoose'); // 👈 ESTA LÍNEA ES LA QUE FALTABA
+const mongoose = require('mongoose');
 
 const varianteSchema = new mongoose.Schema(
   {
     nombre: { type: String, required: true, trim: true },
     color: { type: String, trim: true },
     talla: { type: String, trim: true },
-    precio: { type: Number },                 // opcional, si no se usa el precio del producto padre
+    precio: { type: Number }, // opcional, si no se usa el precio del producto padre
     stock: { type: Number, default: 0 },
     sku: { type: String, trim: true }
   },
@@ -18,8 +18,8 @@ const productSchema = new mongoose.Schema(
     nombre: { type: String, required: true, trim: true },
     descripcion: { type: String, trim: true },
     precio: { type: Number, required: true },
-    stock: { type: Number, default: 0 },      // stock base (sin variantes) o total precalculado
-    variantes: [varianteSchema],              // 👈 aquí viven las variantes
+    stock: { type: Number, default: null }, // stock base (sin variantes) o total precalculado
+    variantes: [varianteSchema], // variantes opcionales
     imagen_url: { type: String },
     cloudinary_id: { type: String },
     categoria: {
@@ -38,12 +38,18 @@ const productSchema = new mongoose.Schema(
 // Virtual para calcular stock_total en runtime
 productSchema.virtual('stock_total').get(function () {
   if (Array.isArray(this.variantes) && this.variantes.length > 0) {
-    return this.variantes.reduce(
-      (acc, variante) => acc + (variante.stock || 0),
-      0
-    );
+    const stocks = this.variantes
+      .map((vari) => {
+        const valor = Number(vari.stock);
+        return Number.isFinite(valor) ? valor : null;
+      })
+      .filter((st) => st !== null);
+
+    if (stocks.length === 0) return null;
+    return stocks.reduce((acc, st) => acc + st, 0);
   }
-  return typeof this.stock === 'number' ? this.stock : 0;
+
+  return typeof this.stock === 'number' ? this.stock : null;
 });
 
 module.exports = mongoose.model('Producto', productSchema);
