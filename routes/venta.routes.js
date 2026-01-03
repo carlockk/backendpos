@@ -18,6 +18,67 @@ const obtenerAtributosVariante = (variante) => {
 const calcularStockDesdeVariantes = (variantes = []) =>
   variantes.reduce((acc, variante) => acc + (variante.stock || 0), 0);
 
+const armarDesglosePorTipoProducto = async (ventas = []) => {
+  const ids = new Set();
+  ventas.forEach((venta) => {
+    venta.productos?.forEach((item) => {
+      if (item?.productoId) {
+        ids.add(item.productoId.toString());
+      }
+    });
+  });
+
+  if (ids.size === 0) {
+    return {};
+  }
+
+  const productos = await Producto.find({ _id: { $in: [...ids] } }).populate('categoria', 'nombre');
+  const categoriaPorProducto = new Map(
+    productos.map((producto) => [
+      producto._id.toString(),
+      producto.categoria?.nombre || 'Sin categoria'
+    ])
+  );
+
+  const porTipoProducto = {};
+  ventas.forEach((venta) => {
+    venta.productos?.forEach((item) => {
+      const productoId = item?.productoId ? item.productoId.toString() : null;
+      const categoria = productoId && categoriaPorProducto.get(productoId)
+        ? categoriaPorProducto.get(productoId)
+        : 'Sin categoria';
+      const precio = Number(item?.precio_unitario) || 0;
+      const cantidad = Number(item?.cantidad) || 0;
+      const subtotal = precio * cantidad;
+
+      if (subtotal <= 0) return;
+      porTipoProducto[categoria] = (porTipoProducto[categoria] || 0) + subtotal;
+    });
+  });
+
+  return porTipoProducto;
+};
+
+const armarResumenPorProducto = (ventas = []) => {
+  const porProducto = new Map();
+
+  ventas.forEach((venta) => {
+    venta.productos?.forEach((item) => {
+      const nombre = item?.nombre || 'Producto sin nombre';
+      const cantidad = Number(item?.cantidad) || 0;
+      const precio = Number(item?.precio_unitario) || 0;
+      if (cantidad <= 0 || precio < 0) return;
+
+      const actual = porProducto.get(nombre) || { nombre, cantidad: 0, total: 0 };
+      actual.cantidad += cantidad;
+      actual.total += cantidad * precio;
+      porProducto.set(nombre, actual);
+    });
+  });
+
+  return [...porProducto.values()].sort((a, b) => b.total - a.total);
+};
+
 /**
  * @swagger
  * tags:
@@ -80,6 +141,8 @@ router.get('/', async (req, res) => {
  *                   type: number
  *                 porTipoPago:
  *                   type: object
+ *                 porTipoProducto:
+ *                   type: object
  *       400:
  *         description: Fecha requerida
  *       500:
@@ -103,10 +166,15 @@ router.get('/resumen', async (req, res) => {
 
     const porTipoPago = {};
     ventas.forEach(v => {
-      porTipoPago[v.tipo_pago] = (porTipoPago[v.tipo_pago] || 0) + v.total;
+      const tipoPago = v.tipo_pago || 'Otro';
+      porTipoPago[tipoPago] = (porTipoPago[tipoPago] || 0) + v.total;
     });
 
-    res.json({ total, cantidad, porTipoPago });
+    const porTipoProducto = await armarDesglosePorTipoProducto(ventas);
+
+    const porProducto = armarResumenPorProducto(ventas);
+
+    res.json({ total, cantidad, porTipoPago, porTipoProducto, porProducto });
   } catch (err) {
     console.error('Error al obtener resumen:', err);
     res.status(500).json({ error: 'Error interno del servidor' });
@@ -158,10 +226,15 @@ router.get('/resumen-rango', async (req, res) => {
 
     const porTipoPago = {};
     ventas.forEach(v => {
-      porTipoPago[v.tipo_pago] = (porTipoPago[v.tipo_pago] || 0) + v.total;
+      const tipoPago = v.tipo_pago || 'Otro';
+      porTipoPago[tipoPago] = (porTipoPago[tipoPago] || 0) + v.total;
     });
 
-    res.json({ total, cantidad, porTipoPago });
+    const porTipoProducto = await armarDesglosePorTipoProducto(ventas);
+
+    const porProducto = armarResumenPorProducto(ventas);
+
+    res.json({ total, cantidad, porTipoPago, porTipoProducto, porProducto });
   } catch (err) {
     console.error('Error al obtener resumen por rango:', err);
     res.status(500).json({ error: 'Error interno del servidor' });
