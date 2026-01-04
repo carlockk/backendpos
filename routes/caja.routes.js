@@ -1,6 +1,7 @@
 const express = require('express');
 const Caja = require('../models/caja.model.js');
 const Venta = require('../models/venta.model.js');
+const { sanitizeOptionalText } = require('../utils/input');
 
 const router = express.Router();
 
@@ -100,7 +101,8 @@ router.post('/cerrar', async (req, res) => {
     caja.monto_total_final = caja.monto_inicial + total_vendido;
     caja.desglose_por_pago = desglose;
 
-    caja.usuario = req.body?.nombre || 'No identificado';
+    const usuario = sanitizeOptionalText(req.body?.nombre, { max: 80 });
+    caja.usuario = usuario || 'No identificado';
     await caja.save();
 
     res.json({

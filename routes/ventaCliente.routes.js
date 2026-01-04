@@ -3,6 +3,12 @@ const router = express.Router();
 const VentaCliente = require("../models/ventaCliente.model");
 const authMiddleware = require("../middlewares/auth");
 const Cliente = require("../models/Cliente");
+const {
+  sanitizeText,
+  normalizeEmail,
+  isValidEmail,
+  toNumberOrNull
+} = require("../utils/input");
 
 /**
  * @swagger
@@ -47,13 +53,22 @@ router.post("/", authMiddleware, async (req, res) => {
     const last = await VentaCliente.findOne().sort({ numero_pedido: -1 });
     const numero_pedido = last ? last.numero_pedido + 1 : 1;
 
+    const productos = Array.isArray(req.body.productos) ? req.body.productos : null;
+    const total = toNumberOrNull(req.body.total);
+    const tipoPago = sanitizeText(req.body.tipo_pago, { max: 30 });
+    const emailNormalizado = normalizeEmail(req.body.cliente_email);
+
+    if (!productos || productos.length === 0 || total === null || !tipoPago) {
+      return res.status(400).json({ msg: "Datos incompletos" });
+    }
+
     const nuevaVenta = new VentaCliente({
       numero_pedido,
-      productos: req.body.productos,
-      total: req.body.total,
-      tipo_pago: req.body.tipo_pago,
+      productos,
+      total,
+      tipo_pago: tipoPago,
       cliente_id: req.clienteId,
-      cliente_email: req.body.cliente_email || "sin_correo",
+      cliente_email: isValidEmail(emailNormalizado) ? emailNormalizado : "sin_correo",
     });
 
     const ventaGuardada = await nuevaVenta.save();

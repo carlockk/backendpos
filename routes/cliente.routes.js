@@ -3,6 +3,12 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Cliente = require('../models/Cliente');
+const {
+  sanitizeText,
+  sanitizeOptionalText,
+  normalizeEmail,
+  isValidEmail
+} = require('../utils/input');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'mi_clave_secreta';
 
@@ -47,7 +53,15 @@ const JWT_SECRET = process.env.JWT_SECRET || 'mi_clave_secreta';
  */
 router.post('/register', async (req, res) => {
   try {
-    const { nombre, email, password, direccion, telefono } = req.body;
+    const nombre = sanitizeText(req.body.nombre, { max: 80 });
+    const email = normalizeEmail(req.body.email);
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+    const direccion = sanitizeOptionalText(req.body.direccion, { max: 160 });
+    const telefono = sanitizeOptionalText(req.body.telefono, { max: 40 });
+
+    if (!nombre) return res.status(400).json({ msg: 'Nombre requerido.' });
+    if (!isValidEmail(email)) return res.status(400).json({ msg: 'Email inv lido.' });
+    if (!password) return res.status(400).json({ msg: 'Password requerida.' });
 
     const existe = await Cliente.findOne({ email });
     if (existe) return res.status(400).json({ msg: 'El cliente ya existe.' });
@@ -108,7 +122,12 @@ router.post('/register', async (req, res) => {
  */
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = normalizeEmail(req.body.email);
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+
+    if (!isValidEmail(email) || !password) {
+      return res.status(400).json({ msg: 'Credenciales inv lidas.' });
+    }
 
     const cliente = await Cliente.findOne({ email });
     if (!cliente) return res.status(400).json({ msg: 'Email no registrado.' });
@@ -224,13 +243,22 @@ router.get('/perfil', authMiddleware, async (req, res) => {
  */
 router.put('/perfil', authMiddleware, async (req, res) => {
   try {
+    const actualizacion = {};
+    if (Object.prototype.hasOwnProperty.call(req.body, 'nombre')) {
+      const nombre = sanitizeText(req.body.nombre, { max: 80 });
+      if (!nombre) return res.status(400).json({ msg: 'Nombre requerido.' });
+      actualizacion.nombre = nombre;
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'direccion')) {
+      actualizacion.direccion = sanitizeOptionalText(req.body.direccion, { max: 160 });
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'telefono')) {
+      actualizacion.telefono = sanitizeOptionalText(req.body.telefono, { max: 40 });
+    }
+
     const updated = await Cliente.findByIdAndUpdate(
       req.clienteId,
-      {
-        nombre: req.body.nombre,
-        direccion: req.body.direccion,
-        telefono: req.body.telefono
-      },
+      actualizacion,
       { new: true }
     ).select('-password');
 

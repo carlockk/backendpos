@@ -1,5 +1,6 @@
 const express = require('express');
 const Categoria = require('../models/categoria.model.js');
+const { sanitizeText, sanitizeOptionalText } = require('../utils/input');
 
 const router = express.Router();
 
@@ -95,20 +96,21 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { nombre, descripcion } = req.body;
+    const nombre = sanitizeText(req.body.nombre, { max: 60 });
+    const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 200 });
 
-    if (!nombre?.trim()) {
+    if (!nombre) {
       return res.status(400).json({ error: 'Nombre requerido' });
     }
 
-    const existe = await Categoria.findOne({ nombre: nombre.trim() });
+    const existe = await Categoria.findOne({ nombre });
     if (existe) {
       return res.status(400).json({ error: 'Ya existe esa categoría' });
     }
 
     const nueva = new Categoria({
-      nombre: nombre.trim(),
-      descripcion: descripcion?.trim() || ""
+      nombre,
+      descripcion: descripcion || ""
     });
 
     const guardada = await nueva.save();
@@ -156,9 +158,10 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { nombre, descripcion } = req.body;
+    const nombre = sanitizeText(req.body.nombre, { max: 60 });
+    const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 200 });
 
-    if (!nombre?.trim()) {
+    if (!nombre) {
       return res.status(400).json({ error: 'Nombre requerido' });
     }
 
@@ -167,13 +170,13 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Categoría no encontrada' });
     }
 
-    const existe = await Categoria.findOne({ nombre: nombre.trim(), _id: { $ne: req.params.id } });
+    const existe = await Categoria.findOne({ nombre, _id: { $ne: req.params.id } });
     if (existe) {
       return res.status(400).json({ error: 'Ya existe otra categoría con ese nombre' });
     }
 
-    categoria.nombre = nombre.trim();
-    categoria.descripcion = descripcion?.trim() || "";
+    categoria.nombre = nombre;
+    categoria.descripcion = descripcion || "";
 
     const actualizada = await categoria.save();
     res.json(actualizada);

@@ -1,5 +1,10 @@
 const express = require('express');
 const Ticket = require('../models/ticket.model');
+const {
+  sanitizeText,
+  sanitizeOptionalText,
+  toNumberOrNull
+} = require('../utils/input');
 
 const router = express.Router();
 
@@ -62,14 +67,23 @@ const router = express.Router();
  *         description: Error al guardar ticket
  */
 router.post('/', async (req, res) => {
-  const { nombre, productos, total } = req.body;
+  const nombre = sanitizeText(req.body.nombre, { max: 80 });
+  const productos = Array.isArray(req.body.productos) ? req.body.productos : null;
+  const total = toNumberOrNull(req.body.total);
 
-  if (!nombre || !productos || !Array.isArray(productos)) {
+  if (!nombre || !productos || total === null) {
     return res.status(400).json({ error: 'Datos incompletos' });
   }
 
   try {
-    const nuevo = new Ticket({ nombre, productos, total });
+    const productosLimpios = productos.map((item) => ({
+      ...item,
+      nombre: sanitizeOptionalText(item?.nombre, { max: 120 }) || '',
+      observacion: sanitizeOptionalText(item?.observacion, { max: 120 }) || '',
+      varianteNombre: sanitizeOptionalText(item?.varianteNombre, { max: 80 }) || ''
+    }));
+
+    const nuevo = new Ticket({ nombre, productos: productosLimpios, total });
     await nuevo.save();
     res.status(201).json({ mensaje: 'Ticket guardado' });
   } catch (err) {

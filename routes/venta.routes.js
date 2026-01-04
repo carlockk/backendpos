@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Venta = require('../models/venta.model.js');
 const Producto = require('../models/product.model.js');
 const Caja = require('../models/caja.model.js');
+const { sanitizeText, sanitizeOptionalText } = require('../utils/input');
 
 const router = express.Router();
 
@@ -277,6 +278,14 @@ router.post('/', async (req, res) => {
     session.startTransaction();
 
     const { productos, total, tipo_pago, tipo_pedido } = req.body;
+    const tipoPago = sanitizeText(tipo_pago, { max: 30 });
+    const tipoPedido = sanitizeOptionalText(tipo_pedido, { max: 40 }) || '';
+
+    if (!tipoPago) {
+      const error = new Error('El tipo de pago es requerido.');
+      error.status = 400;
+      throw error;
+    }
 
     if (!Array.isArray(productos) || productos.length === 0) {
       const error = new Error('La venta debe incluir al menos un producto.');
@@ -378,7 +387,7 @@ router.post('/', async (req, res) => {
         nombre: producto.nombre,
         precio_unitario: precioUnitario,
         cantidad: cantidadSolicitada,
-        observacion: item.observacion || '',
+        observacion: sanitizeOptionalText(item.observacion, { max: 120 }) || '',
         varianteId: varianteSeleccionada?._id || null,
         varianteNombre: item.varianteNombre || varianteSeleccionada?.nombre || null,
         atributos: obtenerAtributosVariante(varianteSeleccionada)
@@ -388,8 +397,8 @@ router.post('/', async (req, res) => {
     const venta = new Venta({
       productos: productosRegistrados,
       total: totalNumerico,
-      tipo_pago,
-      tipo_pedido,
+      tipo_pago: tipoPago,
+      tipo_pedido: tipoPedido,
       fecha: new Date(),
       numero_pedido: Math.floor(Math.random() * 100)
     });

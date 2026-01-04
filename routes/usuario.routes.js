@@ -1,7 +1,10 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const Usuario = require('../models/usuario.model.js');
+const { sanitizeText, normalizeEmail, isValidEmail } = require('../utils/input');
 
 const router = express.Router();
+const ROLES_VALIDOS = new Set(['admin', 'cajero']);
 
 /**
  * @swagger
@@ -41,10 +44,16 @@ const router = express.Router();
  *         description: Error en el servidor
  */
 router.post('/', async (req, res) => {
-  const { nombre, email, password, rol } = req.body;
+  const nombre = sanitizeText(req.body.nombre, { max: 80 });
+  const email = normalizeEmail(req.body.email);
+  const password = typeof req.body.password === 'string' ? req.body.password : '';
+  const rol = typeof req.body.rol === 'string' ? req.body.rol.trim() : '';
 
-  if (!nombre || !email || !password || !rol) {
+  if (!nombre || !isValidEmail(email) || !password || !rol) {
     return res.status(400).json({ error: 'Faltan campos' });
+  }
+  if (!ROLES_VALIDOS.has(rol)) {
+    return res.status(400).json({ error: 'Rol inv lido' });
   }
 
   try {
@@ -53,7 +62,8 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'El usuario ya existe' });
     }
 
-    const nuevo = new Usuario({ nombre, email, password, rol });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const nuevo = new Usuario({ nombre, email, password: hashedPassword, rol });
     await nuevo.save();
 
     res.status(201).json({ mensaje: 'Usuario creado correctamente' });
@@ -148,9 +158,24 @@ router.put('/:id', async (req, res) => {
 
   try {
     const actualizacion = {};
-    if (nombre) actualizacion.nombre = nombre;
-    if (password) actualizacion.password = password;
-    if (rol) actualizacion.rol = rol;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'nombre')) {
+      const nombreLimpio = sanitizeText(nombre, { max: 80 });
+      if (!nombreLimpio) return res.status(400).json({ error: 'Nombre inv lido' });
+      actualizacion.nombre = nombreLimpio;
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'password')) {
+      if (typeof password !== 'string' || !password) {
+        return res.status(400).json({ error: 'Password inv lida' });
+      }
+      actualizacion.password = await bcrypt.hash(password, 10);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'rol')) {
+      const rolLimpio = typeof rol === 'string' ? rol.trim() : '';
+      if (!ROLES_VALIDOS.has(rolLimpio)) {
+        return res.status(400).json({ error: 'Rol inv lido' });
+      }
+      actualizacion.rol = rolLimpio;
+    }
 
     await Usuario.findByIdAndUpdate(req.params.id, actualizacion);
     res.json({ mensaje: 'Usuario actualizado correctamente' });

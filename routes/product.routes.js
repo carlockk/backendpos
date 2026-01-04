@@ -1,7 +1,9 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const multer = require('multer');
 const Producto = require('../models/product.model.js');
 const { subirImagen, eliminarImagen } = require('../utils/cloudinary');
+const { sanitizeText, sanitizeOptionalText } = require('../utils/input');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() }); // Guarda la imagen temporalmente en memoria
@@ -41,7 +43,7 @@ const normalizarVariantes = (raw) => {
     .map((variant) => {
       if (!variant || typeof variant !== 'object') return null;
 
-      const nombre = (variant.nombre || '').trim();
+      const nombre = sanitizeText(variant.nombre, { max: 80 });
       if (!nombre) {
         throw new Error('Cada variante debe tener un nombre');
       }
@@ -65,11 +67,11 @@ const normalizarVariantes = (raw) => {
       return {
         _id: variant._id && String(variant._id).length ? variant._id : undefined,
         nombre,
-        color: variant.color ? String(variant.color).trim() : undefined,
-        talla: variant.talla ? String(variant.talla).trim() : undefined,
+        color: sanitizeOptionalText(variant.color, { max: 40 }) || undefined,
+        talla: sanitizeOptionalText(variant.talla, { max: 40 }) || undefined,
         precio: precio !== undefined ? precio : undefined,
         stock: stockRaw,
-        sku: variant.sku ? String(variant.sku).trim() : undefined
+        sku: sanitizeOptionalText(variant.sku, { max: 40 }) || undefined
       };
     })
     .filter(Boolean);
@@ -118,6 +120,20 @@ router.post('/', upload.single('imagen'), async (req, res) => {
       cloudinary_id = subida.public_id;
     }
 
+    const nombre = sanitizeText(req.body.nombre, { max: 120 });
+    if (!nombre) {
+      throw new Error('El nombre del producto es requerido');
+    }
+
+    const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
+
+    const nombre = sanitizeText(req.body.nombre, { max: 120 });
+    if (!nombre) {
+      throw new Error('El nombre del producto es requerido');
+    }
+
+    const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
+
     const precio = Number(req.body.precio);
     if (Number.isNaN(precio)) {
       throw new Error('El precio es inválido');
@@ -130,15 +146,20 @@ router.post('/', upload.single('imagen'), async (req, res) => {
     console.log('📦 Crear producto - variantes normalizadas:', variantes);
     const stockCalculado = calcularStockTotal(variantes, stockBase);
 
+    const categoriaId = req.body.categoria;
+    if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
+      throw new Error('La categoria es invalida');
+    }
+
     const nuevo = new Producto({
-      nombre: req.body.nombre,
-      descripcion: req.body.descripcion,
+      nombre,
+      descripcion,
       precio,
       stock: stockCalculado,
       variantes,
       imagen_url,
       cloudinary_id,
-      categoria: req.body.categoria || null
+      categoria: categoriaId || null
     });
 
     const guardado = await nuevo.save();
@@ -164,6 +185,13 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
       cloudinary_id = subida.public_id;
     }
 
+    const nombre = sanitizeText(req.body.nombre, { max: 120 });
+    if (!nombre) {
+      throw new Error('El nombre del producto es requerido');
+    }
+
+    const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
+
     const precio = Number(req.body.precio);
     if (Number.isNaN(precio)) {
       throw new Error('El precio es inválido');
@@ -176,15 +204,20 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
     console.log('✏️ Editar producto - variantes normalizadas:', variantes);
     const stockCalculado = calcularStockTotal(variantes, stockBase);
 
+    const categoriaId = req.body.categoria;
+    if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
+      throw new Error('La categoria es invalida');
+    }
+
     const actualizar = {
-      nombre: req.body.nombre,
-      descripcion: req.body.descripcion,
+      nombre,
+      descripcion,
       precio,
       stock: stockCalculado,
       variantes,
       imagen_url,
       cloudinary_id,
-      categoria: req.body.categoria || null
+      categoria: categoriaId || null
     };
 
     const actualizado = await Producto.findByIdAndUpdate(
