@@ -21,6 +21,7 @@ const VentaClienteSchema = new mongoose.Schema({
   productos: [ProductoSchema],
   total: Number,
   tipo_pago: String,
+  local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', default: null },
   fecha: { type: Date, default: Date.now },
   cliente_id: { type: mongoose.Schema.Types.ObjectId, ref: "Cliente" },
   cliente_email: String,

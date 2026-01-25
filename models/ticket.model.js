@@ -20,6 +20,8 @@ const ticketSchema = new mongoose.Schema({
     }
   ],
   total: Number,
+  usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', default: null },
+  local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', default: null },
   creado: {
     type: Date,
     default: () => new Date()

@@ -5,8 +5,11 @@ const {
   sanitizeOptionalText,
   toNumberOrNull
 } = require('../utils/input');
+const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
+router.use(adjuntarScopeLocal);
+router.use(requiereLocal);
 
 /**
  * @swagger
@@ -83,7 +86,13 @@ router.post('/', async (req, res) => {
       varianteNombre: sanitizeOptionalText(item?.varianteNombre, { max: 80 }) || ''
     }));
 
-    const nuevo = new Ticket({ nombre, productos: productosLimpios, total });
+    const nuevo = new Ticket({
+      nombre,
+      productos: productosLimpios,
+      total,
+      local: req.localId,
+      usuario: req.userId || null
+    });
     await nuevo.save();
     res.status(201).json({ mensaje: 'Ticket guardado' });
   } catch (err) {
@@ -105,7 +114,15 @@ router.post('/', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const tickets = await Ticket.find().sort({ creado: -1 });
+    const filtro = { local: req.localId };
+    if (req.userRole === 'cajero') {
+      if (!req.userId) {
+        return res.status(400).json({ error: 'Usuario requerido' });
+      }
+      filtro.usuario = req.userId;
+    }
+
+    const tickets = await Ticket.find(filtro).sort({ creado: -1 });
     res.json(tickets);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener tickets' });
@@ -133,7 +150,7 @@ router.get('/', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    await Ticket.findByIdAndDelete(req.params.id);
+    await Ticket.findOneAndDelete({ _id: req.params.id, local: req.localId });
     res.json({ mensaje: 'Ticket eliminado' });
   } catch (err) {
     res.status(500).json({ error: 'Error al eliminar ticket' });

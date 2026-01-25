@@ -22,6 +22,8 @@ const ventaSchema = new mongoose.Schema({
   total: Number,
   tipo_pago: String,
   tipo_pedido: String,
+  usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', default: null },
+  local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', default: null },
   fecha: {
     type: Date,
     default: () => new Date()

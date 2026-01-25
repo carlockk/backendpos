@@ -2,11 +2,15 @@ const express = require('express');
 const mongoose = require('mongoose');
 const multer = require('multer');
 const Producto = require('../models/product.model.js');
+const Categoria = require('../models/categoria.model.js');
 const { subirImagen, eliminarImagen } = require('../utils/cloudinary');
 const { sanitizeText, sanitizeOptionalText } = require('../utils/input');
+const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() }); // Guarda la imagen temporalmente en memoria
+router.use(adjuntarScopeLocal);
+router.use(requiereLocal);
 
 const parseStockValue = (valor, controlarStock = true) => {
   if (!controlarStock) return null;
@@ -86,7 +90,7 @@ const calcularStockTotal = (variantes, stockBase) => {
 
 router.get('/', async (_req, res) => {
   try {
-    const productos = await Producto.find()
+    const productos = await Producto.find({ local: _req.localId })
       .populate('categoria', 'nombre')
       .sort({ creado_en: -1 });
     res.json(productos);
@@ -97,10 +101,10 @@ router.get('/', async (_req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const producto = await Producto.findById(req.params.id).populate(
-      'categoria',
-      'nombre'
-    );
+    const producto = await Producto.findOne({
+      _id: req.params.id,
+      local: req.localId
+    }).populate('categoria', 'nombre');
     if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
 
     res.json(producto);
@@ -127,13 +131,6 @@ router.post('/', upload.single('imagen'), async (req, res) => {
 
     const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
 
-    const nombre = sanitizeText(req.body.nombre, { max: 120 });
-    if (!nombre) {
-      throw new Error('El nombre del producto es requerido');
-    }
-
-    const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
-
     const precio = Number(req.body.precio);
     if (Number.isNaN(precio)) {
       throw new Error('El precio es inválido');
@@ -150,6 +147,12 @@ router.post('/', upload.single('imagen'), async (req, res) => {
     if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
       throw new Error('La categoria es invalida');
     }
+    if (categoriaId) {
+      const categoria = await Categoria.findOne({ _id: categoriaId, local: req.localId });
+      if (!categoria) {
+        throw new Error('La categoria es invalida');
+      }
+    }
 
     const nuevo = new Producto({
       nombre,
@@ -159,7 +162,8 @@ router.post('/', upload.single('imagen'), async (req, res) => {
       variantes,
       imagen_url,
       cloudinary_id,
-      categoria: categoriaId || null
+      categoria: categoriaId || null,
+      local: req.localId
     });
 
     const guardado = await nuevo.save();
@@ -172,7 +176,7 @@ router.post('/', upload.single('imagen'), async (req, res) => {
 
 router.put('/:id', upload.single('imagen'), async (req, res) => {
   try {
-    const producto = await Producto.findById(req.params.id);
+    const producto = await Producto.findOne({ _id: req.params.id, local: req.localId });
     if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
 
     let imagen_url = producto.imagen_url;
@@ -208,6 +212,12 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
     if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
       throw new Error('La categoria es invalida');
     }
+    if (categoriaId) {
+      const categoria = await Categoria.findOne({ _id: categoriaId, local: req.localId });
+      if (!categoria) {
+        throw new Error('La categoria es invalida');
+      }
+    }
 
     const actualizar = {
       nombre,
@@ -217,11 +227,12 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
       variantes,
       imagen_url,
       cloudinary_id,
-      categoria: categoriaId || null
+      categoria: categoriaId || null,
+      local: req.localId
     };
 
-    const actualizado = await Producto.findByIdAndUpdate(
-      req.params.id,
+    const actualizado = await Producto.findOneAndUpdate(
+      { _id: req.params.id, local: req.localId },
       actualizar,
       { new: true }
     );
@@ -234,7 +245,11 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    const producto = await Producto.findById(req.params.id);
+    if (req.userRole === 'cajero') {
+      return res.status(403).json({ error: 'No tienes permisos para eliminar productos' });
+    }
+
+    const producto = await Producto.findOne({ _id: req.params.id, local: req.localId });
     if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
 
     if (producto.cloudinary_id) {

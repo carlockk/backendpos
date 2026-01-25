@@ -1,10 +1,16 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
+const Local = require('../models/local.model');
 const Usuario = require('../models/usuario.model.js');
 const { sanitizeText, normalizeEmail, isValidEmail } = require('../utils/input');
+const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
-const ROLES_VALIDOS = new Set(['admin', 'cajero']);
+const ROLES_VALIDOS = new Set(['superadmin', 'admin', 'cajero']);
+
+router.use(adjuntarScopeLocal);
+router.use(requiereLocal);
 
 /**
  * @swagger
@@ -48,6 +54,7 @@ router.post('/', async (req, res) => {
   const email = normalizeEmail(req.body.email);
   const password = typeof req.body.password === 'string' ? req.body.password : '';
   const rol = typeof req.body.rol === 'string' ? req.body.rol.trim() : '';
+  const localId = req.localId;
 
   if (!nombre || !isValidEmail(email) || !password || !rol) {
     return res.status(400).json({ error: 'Faltan campos' });
@@ -57,13 +64,22 @@ router.post('/', async (req, res) => {
   }
 
   try {
+    if (!localId || !mongoose.Types.ObjectId.isValid(localId)) {
+      return res.status(400).json({ error: 'Local invalido' });
+    }
+
+    const localExiste = await Local.findById(localId);
+    if (!localExiste) {
+      return res.status(400).json({ error: 'Local no encontrado' });
+    }
+
     const existe = await Usuario.findOne({ email });
     if (existe) {
       return res.status(400).json({ error: 'El usuario ya existe' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const nuevo = new Usuario({ nombre, email, password: hashedPassword, rol });
+    const nuevo = new Usuario({ nombre, email, password: hashedPassword, rol, local: localId });
     await nuevo.save();
 
     res.status(201).json({ mensaje: 'Usuario creado correctamente' });
@@ -86,7 +102,10 @@ router.post('/', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const usuarios = await Usuario.find({}, '-password');
+    const usuarios = await Usuario.find(
+      { local: req.localId },
+      '-password'
+    ).populate('local', 'nombre direccion telefono correo');
     res.json(usuarios);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener usuarios' });
@@ -114,7 +133,7 @@ router.get('/', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    await Usuario.findByIdAndDelete(req.params.id);
+    await Usuario.findOneAndDelete({ _id: req.params.id, local: req.localId });
     res.json({ mensaje: 'Usuario eliminado' });
   } catch (err) {
     res.status(500).json({ error: 'Error al eliminar usuario' });
@@ -176,8 +195,21 @@ router.put('/:id', async (req, res) => {
       }
       actualizacion.rol = rolLimpio;
     }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'local')) {
+      if (!req.localId || !mongoose.Types.ObjectId.isValid(req.localId)) {
+        return res.status(400).json({ error: 'Local invalido' });
+      }
+      const localExiste = await Local.findById(req.localId);
+      if (!localExiste) {
+        return res.status(400).json({ error: 'Local no encontrado' });
+      }
+      actualizacion.local = req.localId;
+    }
 
-    await Usuario.findByIdAndUpdate(req.params.id, actualizacion);
+    await Usuario.findOneAndUpdate(
+      { _id: req.params.id, local: req.localId },
+      actualizacion
+    );
     res.json({ mensaje: 'Usuario actualizado correctamente' });
   } catch (err) {
     res.status(500).json({ error: 'Error al actualizar usuario' });

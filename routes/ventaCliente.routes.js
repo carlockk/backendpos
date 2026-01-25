@@ -62,6 +62,9 @@ router.post("/", authMiddleware, async (req, res) => {
       return res.status(400).json({ msg: "Datos incompletos" });
     }
 
+    const cliente = await Cliente.findById(req.clienteId);
+    const localId = cliente?.local || null;
+
     const nuevaVenta = new VentaCliente({
       numero_pedido,
       productos,
@@ -69,6 +72,7 @@ router.post("/", authMiddleware, async (req, res) => {
       tipo_pago: tipoPago,
       cliente_id: req.clienteId,
       cliente_email: isValidEmail(emailNormalizado) ? emailNormalizado : "sin_correo",
+      local: localId
     });
 
     const ventaGuardada = await nuevaVenta.save();

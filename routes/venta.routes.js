@@ -4,8 +4,11 @@ const Venta = require('../models/venta.model.js');
 const Producto = require('../models/product.model.js');
 const Caja = require('../models/caja.model.js');
 const { sanitizeText, sanitizeOptionalText } = require('../utils/input');
+const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
+router.use(adjuntarScopeLocal);
+router.use(requiereLocal);
 
 const obtenerAtributosVariante = (variante) => {
   if (!variante) return [];
@@ -19,7 +22,7 @@ const obtenerAtributosVariante = (variante) => {
 const calcularStockDesdeVariantes = (variantes = []) =>
   variantes.reduce((acc, variante) => acc + (variante.stock || 0), 0);
 
-const armarDesglosePorTipoProducto = async (ventas = []) => {
+const armarDesglosePorTipoProducto = async (ventas = [], localId) => {
   const ids = new Set();
   ventas.forEach((venta) => {
     venta.productos?.forEach((item) => {
@@ -33,7 +36,10 @@ const armarDesglosePorTipoProducto = async (ventas = []) => {
     return {};
   }
 
-  const productos = await Producto.find({ _id: { $in: [...ids] } }).populate('categoria', 'nombre');
+  const productos = await Producto.find({
+    _id: { $in: [...ids] },
+    local: localId
+  }).populate('categoria', 'nombre');
   const categoriaPorProducto = new Map(
     productos.map((producto) => [
       producto._id.toString(),
@@ -107,7 +113,15 @@ const armarResumenPorProducto = (ventas = []) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const ventas = await Venta.find().sort({ fecha: -1 });
+    const filtro = { local: req.localId };
+    if (req.userRole === 'cajero') {
+      if (!req.userId) {
+        return res.status(400).json({ error: 'Usuario requerido' });
+      }
+      filtro.usuario = req.userId;
+    }
+
+    const ventas = await Venta.find(filtro).sort({ fecha: -1 });
     res.json(ventas);
   } catch (err) {
     console.error('Error al obtener historial:', err);
@@ -160,7 +174,18 @@ router.get('/resumen', async (req, res) => {
     const inicio = new Date(`${fecha}T00:00:00`);
     const fin = new Date(`${fecha}T23:59:59.999`);
 
-    const ventas = await Venta.find({ fecha: { $gte: inicio, $lte: fin } });
+    const filtro = {
+      fecha: { $gte: inicio, $lte: fin },
+      local: req.localId
+    };
+    if (req.userRole === 'cajero') {
+      if (!req.userId) {
+        return res.status(400).json({ error: 'Usuario requerido' });
+      }
+      filtro.usuario = req.userId;
+    }
+
+    const ventas = await Venta.find(filtro);
 
     const total = ventas.reduce((acc, v) => acc + v.total, 0);
     const cantidad = ventas.length;
@@ -171,7 +196,7 @@ router.get('/resumen', async (req, res) => {
       porTipoPago[tipoPago] = (porTipoPago[tipoPago] || 0) + v.total;
     });
 
-    const porTipoProducto = await armarDesglosePorTipoProducto(ventas);
+    const porTipoProducto = await armarDesglosePorTipoProducto(ventas, req.localId);
 
     const porProducto = armarResumenPorProducto(ventas);
 
@@ -220,7 +245,18 @@ router.get('/resumen-rango', async (req, res) => {
     const fechaInicio = new Date(`${inicio}T00:00:00`);
     const fechaFin = new Date(`${fin}T23:59:59.999`);
 
-    const ventas = await Venta.find({ fecha: { $gte: fechaInicio, $lte: fechaFin } });
+    const filtro = {
+      fecha: { $gte: fechaInicio, $lte: fechaFin },
+      local: req.localId
+    };
+    if (req.userRole === 'cajero') {
+      if (!req.userId) {
+        return res.status(400).json({ error: 'Usuario requerido' });
+      }
+      filtro.usuario = req.userId;
+    }
+
+    const ventas = await Venta.find(filtro);
 
     const total = ventas.reduce((acc, v) => acc + v.total, 0);
     const cantidad = ventas.length;
@@ -231,7 +267,7 @@ router.get('/resumen-rango', async (req, res) => {
       porTipoPago[tipoPago] = (porTipoPago[tipoPago] || 0) + v.total;
     });
 
-    const porTipoProducto = await armarDesglosePorTipoProducto(ventas);
+    const porTipoProducto = await armarDesglosePorTipoProducto(ventas, req.localId);
 
     const porProducto = armarResumenPorProducto(ventas);
 
@@ -300,7 +336,10 @@ router.post('/', async (req, res) => {
       throw error;
     }
 
-    const cajaAbierta = await Caja.findOne({ cierre: null }).session(session);
+    const cajaAbierta = await Caja.findOne({
+      cierre: null,
+      local: req.localId
+    }).session(session);
     if (!cajaAbierta) {
       const error = new Error('Debes abrir la caja antes de registrar ventas.');
       error.status = 400;
@@ -323,7 +362,10 @@ router.post('/', async (req, res) => {
         throw error;
       }
 
-      const producto = await Producto.findById(item.productoId).session(session);
+      const producto = await Producto.findOne({
+        _id: item.productoId,
+        local: req.localId
+      }).session(session);
       if (!producto) {
         const error = new Error('Producto no encontrado.');
         error.status = 404;
@@ -400,7 +442,9 @@ router.post('/', async (req, res) => {
       tipo_pago: tipoPago,
       tipo_pedido: tipoPedido,
       fecha: new Date(),
-      numero_pedido: Math.floor(Math.random() * 100)
+      numero_pedido: Math.floor(Math.random() * 100),
+      local: req.localId,
+      usuario: req.userId || null
     });
 
     await venta.save({ session });

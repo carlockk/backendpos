@@ -15,6 +15,7 @@ const varianteSchema = new mongoose.Schema(
 
 const productSchema = new mongoose.Schema(
   {
+    sku: { type: String, trim: true },
     nombre: { type: String, required: true, trim: true },
     descripcion: { type: String, trim: true },
     precio: { type: Number, required: true },
@@ -27,6 +28,7 @@ const productSchema = new mongoose.Schema(
       ref: 'Categoria',
       default: null
     },
+    local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', default: null },
     creado_en: { type: Date, default: Date.now }
   },
   {

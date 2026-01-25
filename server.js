@@ -41,6 +41,7 @@ const ticketRoutes = require("./routes/ticket.routes.js");
 const clienteRoutes = require("./routes/cliente.routes");
 const ventaClienteRoutes = require("./routes/ventaCliente.routes");
 const pagosRoutes = require("./routes/pagos.routes");
+const localesRoutes = require("./routes/locales.routes");
 
 // Swagger
 const { swaggerUi, specs } = require("./swagger");
@@ -57,6 +58,7 @@ app.use("/api/tickets", ticketRoutes);
 app.use("/api/clientes", clienteRoutes);
 app.use("/api/ventasCliente", ventaClienteRoutes);
 app.use("/api/pagos", pagosRoutes);
+app.use("/api/locales", localesRoutes);
 
 // 🌍 Debug conexión
 console.log("🌍 MONGO_URI:", process.env.MONGO_URI);

@@ -61,7 +61,10 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Credenciales inv lidas' });
   }
 
-  const usuario = await Usuario.findOne({ email });
+  const usuario = await Usuario.findOne({ email }).populate(
+    'local',
+    'nombre direccion telefono correo'
+  );
   if (!usuario) return res.status(401).json({ error: 'Usuario no encontrado' });
 
   let match = false;
@@ -80,7 +83,16 @@ router.post('/login', async (req, res) => {
     _id: usuario._id,
     email: usuario.email,
     nombre: usuario.nombre || '',
-    rol: usuario.rol
+    rol: usuario.rol,
+    local: usuario.local
+      ? {
+          _id: usuario.local._id,
+          nombre: usuario.local.nombre || '',
+          direccion: usuario.local.direccion || '',
+          telefono: usuario.local.telefono || '',
+          correo: usuario.local.correo || ''
+        }
+      : null
   });
 });
 

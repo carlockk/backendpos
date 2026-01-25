@@ -7,7 +7,8 @@ const cajaSchema = new mongoose.Schema({
   monto_total_vendido: Number,
   monto_total_final: Number,
   desglose_por_pago: { type: Object, default: {} },
-  usuario: { type: String, default: 'No registrado' }
+  usuario: { type: String, default: 'No registrado' },
+  local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', default: null }
 });
 
 module.exports = mongoose.model('Caja', cajaSchema);

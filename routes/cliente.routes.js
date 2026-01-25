@@ -9,8 +9,10 @@ const {
   normalizeEmail,
   isValidEmail
 } = require('../utils/input');
+const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'mi_clave_secreta';
+router.use(adjuntarScopeLocal);
 
 /**
  * @swagger
@@ -73,7 +75,8 @@ router.post('/register', async (req, res) => {
       email,
       password: hashedPassword,
       direccion,
-      telefono
+      telefono,
+      local: req.localId || null
     });
 
     await nuevoCliente.save();
@@ -163,9 +166,9 @@ router.post('/login', async (req, res) => {
  *       500:
  *         description: Error al obtener clientes
  */
-router.get('/todos', async (req, res) => {
+router.get('/todos', requiereLocal, async (req, res) => {
   try {
-    const clientes = await Cliente.find().select('-password');
+    const clientes = await Cliente.find({ local: req.localId }).select('-password');
     res.json(clientes);
   } catch (error) {
     res.status(500).json({ msg: 'Error al obtener clientes', error });

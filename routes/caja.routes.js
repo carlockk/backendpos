@@ -2,8 +2,11 @@ const express = require('express');
 const Caja = require('../models/caja.model.js');
 const Venta = require('../models/venta.model.js');
 const { sanitizeOptionalText } = require('../utils/input');
+const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
+router.use(adjuntarScopeLocal);
+router.use(requiereLocal);
 
 /**
  * @swagger
@@ -43,12 +46,12 @@ router.post('/abrir', async (req, res) => {
       return res.status(400).json({ error: 'Monto inicial inválido' });
     }
 
-    const caja_abierta = await Caja.findOne({ cierre: null });
+    const caja_abierta = await Caja.findOne({ cierre: null, local: req.localId });
     if (caja_abierta) {
       return res.status(400).json({ error: 'Ya hay una caja abierta.' });
     }
 
-    const nueva = new Caja({ monto_inicial: monto });
+    const nueva = new Caja({ monto_inicial: monto, local: req.localId });
     await nueva.save();
 
     res.json({ mensaje: 'Caja abierta', id: nueva._id });
@@ -84,10 +87,13 @@ router.post('/abrir', async (req, res) => {
  */
 router.post('/cerrar', async (req, res) => {
   try {
-    const caja = await Caja.findOne({ cierre: null });
+    const caja = await Caja.findOne({ cierre: null, local: req.localId });
     if (!caja) return res.status(400).json({ error: 'No hay caja abierta.' });
 
-    const ventas = await Venta.find({ fecha: { $gte: caja.apertura } });
+    const ventas = await Venta.find({
+      fecha: { $gte: caja.apertura },
+      local: req.localId
+    });
     const total_vendido = ventas.reduce((sum, v) => sum + v.total, 0);
 
     const desglose = {};
@@ -137,7 +143,7 @@ router.post('/cerrar', async (req, res) => {
  */
 router.get('/historial', async (_req, res) => {
   try {
-    const cajas = await Caja.find().sort({ apertura: -1 });
+    const cajas = await Caja.find({ local: _req.localId }).sort({ apertura: -1 });
     res.json(cajas);
   } catch (error) {
     console.error('Error en historial:', error);

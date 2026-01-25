@@ -1,8 +1,11 @@
 const express = require('express');
 const Categoria = require('../models/categoria.model.js');
 const { sanitizeText, sanitizeOptionalText } = require('../utils/input');
+const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
+router.use(adjuntarScopeLocal);
+router.use(requiereLocal);
 
 /**
  * @swagger
@@ -25,7 +28,7 @@ const router = express.Router();
  */
 router.get('/', async (req, res) => {
   try {
-    const categorias = await Categoria.find().sort({ nombre: 1 });
+    const categorias = await Categoria.find({ local: req.localId }).sort({ nombre: 1 });
     res.json(categorias);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener categorías' });
@@ -55,7 +58,10 @@ router.get('/', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
-    const categoria = await Categoria.findById(req.params.id);
+    const categoria = await Categoria.findOne({
+      _id: req.params.id,
+      local: req.localId
+    });
     if (!categoria) {
       return res.status(404).json({ error: 'Categoría no encontrada' });
     }
@@ -103,14 +109,15 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Nombre requerido' });
     }
 
-    const existe = await Categoria.findOne({ nombre });
+    const existe = await Categoria.findOne({ nombre, local: req.localId });
     if (existe) {
       return res.status(400).json({ error: 'Ya existe esa categoría' });
     }
 
     const nueva = new Categoria({
       nombre,
-      descripcion: descripcion || ""
+      descripcion: descripcion || "",
+      local: req.localId
     });
 
     const guardada = await nueva.save();
@@ -165,12 +172,16 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Nombre requerido' });
     }
 
-    const categoria = await Categoria.findById(req.params.id);
+    const categoria = await Categoria.findOne({ _id: req.params.id, local: req.localId });
     if (!categoria) {
       return res.status(404).json({ error: 'Categoría no encontrada' });
     }
 
-    const existe = await Categoria.findOne({ nombre, _id: { $ne: req.params.id } });
+    const existe = await Categoria.findOne({
+      nombre,
+      _id: { $ne: req.params.id },
+      local: req.localId
+    });
     if (existe) {
       return res.status(400).json({ error: 'Ya existe otra categoría con ese nombre' });
     }
@@ -208,12 +219,12 @@ router.put('/:id', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const categoria = await Categoria.findById(req.params.id);
+    const categoria = await Categoria.findOne({ _id: req.params.id, local: req.localId });
     if (!categoria) {
       return res.status(404).json({ error: 'Categoría no encontrada' });
     }
 
-    await Categoria.findByIdAndDelete(req.params.id);
+    await Categoria.findOneAndDelete({ _id: req.params.id, local: req.localId });
     res.json({ mensaje: 'Categoría eliminada correctamente' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar categoría' });

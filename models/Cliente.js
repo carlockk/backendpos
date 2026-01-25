@@ -7,6 +7,7 @@ const ClienteSchema = new mongoose.Schema({
   password: { type: String, required: true },
   direccion: { type: String },
   telefono: { type: String },
+  local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', default: null },
   createdAt: { type: Date, default: Date.now }
 });
 
