@@ -10,7 +10,6 @@ const router = express.Router();
 const ROLES_VALIDOS = new Set(['superadmin', 'admin', 'cajero']);
 
 router.use(adjuntarScopeLocal);
-router.use(requiereLocal);
 
 /**
  * @swagger
@@ -54,7 +53,8 @@ router.post('/', async (req, res) => {
   const email = normalizeEmail(req.body.email);
   const password = typeof req.body.password === 'string' ? req.body.password : '';
   const rol = typeof req.body.rol === 'string' ? req.body.rol.trim() : '';
-  const localId = req.localId;
+  const localRaw = req.body.local;
+  let localId = req.localId;
 
   if (!nombre || !isValidEmail(email) || !password || !rol) {
     return res.status(400).json({ error: 'Faltan campos' });
@@ -64,6 +64,16 @@ router.post('/', async (req, res) => {
   }
 
   try {
+    if (req.userRole === 'superadmin' && localRaw !== undefined) {
+      if (localRaw === null || String(localRaw).trim() === '') {
+        localId = null;
+      } else if (!mongoose.Types.ObjectId.isValid(localRaw)) {
+        return res.status(400).json({ error: 'Local invalido' });
+      } else {
+        localId = localRaw;
+      }
+    }
+
     if (!localId || !mongoose.Types.ObjectId.isValid(localId)) {
       return res.status(400).json({ error: 'Local invalido' });
     }
@@ -102,6 +112,9 @@ router.post('/', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
+    if (!req.localId) {
+      return res.status(400).json({ error: 'Local requerido' });
+    }
     const usuarios = await Usuario.find(
       { local: req.localId },
       '-password'
@@ -133,6 +146,9 @@ router.get('/', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
+    if (!req.localId) {
+      return res.status(400).json({ error: 'Local requerido' });
+    }
     await Usuario.findOneAndDelete({ _id: req.params.id, local: req.localId });
     res.json({ mensaje: 'Usuario eliminado' });
   } catch (err) {
@@ -196,20 +212,40 @@ router.put('/:id', async (req, res) => {
       actualizacion.rol = rolLimpio;
     }
     if (Object.prototype.hasOwnProperty.call(req.body, 'local')) {
-      if (!req.localId || !mongoose.Types.ObjectId.isValid(req.localId)) {
-        return res.status(400).json({ error: 'Local invalido' });
+      if (req.userRole === 'superadmin') {
+        const localRaw = req.body.local;
+        if (localRaw === null || String(localRaw).trim() === '') {
+          actualizacion.local = null;
+        } else if (!mongoose.Types.ObjectId.isValid(localRaw)) {
+          return res.status(400).json({ error: 'Local invalido' });
+        } else {
+          const localExiste = await Local.findById(localRaw);
+          if (!localExiste) {
+            return res.status(400).json({ error: 'Local no encontrado' });
+          }
+          actualizacion.local = localRaw;
+        }
+      } else {
+        if (!req.localId || !mongoose.Types.ObjectId.isValid(req.localId)) {
+          return res.status(400).json({ error: 'Local invalido' });
+        }
+        const localExiste = await Local.findById(req.localId);
+        if (!localExiste) {
+          return res.status(400).json({ error: 'Local no encontrado' });
+        }
+        actualizacion.local = req.localId;
       }
-      const localExiste = await Local.findById(req.localId);
-      if (!localExiste) {
-        return res.status(400).json({ error: 'Local no encontrado' });
-      }
-      actualizacion.local = req.localId;
     }
 
-    await Usuario.findOneAndUpdate(
-      { _id: req.params.id, local: req.localId },
-      actualizacion
-    );
+    if (!req.localId && req.userRole !== 'superadmin') {
+      return res.status(400).json({ error: 'Local requerido' });
+    }
+
+    const filtro = req.userRole === 'superadmin'
+      ? { _id: req.params.id }
+      : { _id: req.params.id, local: req.localId };
+
+    await Usuario.findOneAndUpdate(filtro, actualizacion);
     res.json({ mensaje: 'Usuario actualizado correctamente' });
   } catch (err) {
     res.status(500).json({ error: 'Error al actualizar usuario' });
