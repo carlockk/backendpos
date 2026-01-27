@@ -1,7 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const multer = require('multer');
-const Producto = require('../models/product.model.js');
 const ProductoBase = require('../models/productBase.model.js');
 const ProductoLocal = require('../models/productLocal.model.js');
 const Categoria = require('../models/categoria.model.js');
@@ -224,14 +223,7 @@ router.get('/', async (_req, res) => {
       })
       .sort({ creado_en: -1 });
 
-    if (locales.length > 0) {
-      return res.json(locales.map(proyectarProductoLocal));
-    }
-
-    const productosLegacy = await Producto.find({ local: _req.localId })
-      .populate('categoria', 'nombre')
-      .sort({ creado_en: -1 });
-    return res.json(productosLegacy);
+    return res.json(locales.map(proyectarProductoLocal));
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener productos' });
   }
@@ -249,14 +241,7 @@ router.get('/:id', async (req, res) => {
     if (productoLocal) {
       return res.json(proyectarProductoLocal(productoLocal));
     }
-
-    const productoLegacy = await Producto.findOne({
-      _id: req.params.id,
-      local: req.localId
-    }).populate('categoria', 'nombre');
-    if (!productoLegacy) return res.status(404).json({ error: 'Producto no encontrado' });
-
-    return res.json(productoLegacy);
+    return res.status(404).json({ error: 'Producto no encontrado' });
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener producto' });
   }
@@ -287,10 +272,8 @@ router.post('/', upload.single('imagen'), async (req, res) => {
 
     const controlarStock = String(req.body.controlarStock) === 'true';
     const stockBase = parseStockValue(req.body.stock, controlarStock);
-    const variantes = normalizarVariantes(req.body.variantes);
-    console.log('📦 Crear producto - req.body.variantes:', req.body.variantes);
-    console.log('📦 Crear producto - variantes normalizadas:', variantes);
-    const stockCalculado = calcularStockTotal(variantes, stockBase);
+    const variantesRaw = normalizarVariantes(req.body.variantes);
+    const stockCalculado = calcularStockTotal(variantesRaw, stockBase);
 
     const categoriaId = req.body.categoria;
     if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
@@ -303,20 +286,47 @@ router.post('/', upload.single('imagen'), async (req, res) => {
       }
     }
 
-    const nuevo = new Producto({
+    const base = new ProductoBase({
       nombre,
       descripcion,
-      precio,
-      stock: stockCalculado,
-      variantes,
       imagen_url,
       cloudinary_id,
       categoria: categoriaId || null,
-      local: req.localId
+      variantes: variantesRaw.map((v) => ({
+        nombre: v.nombre,
+        color: v.color,
+        talla: v.talla,
+        sku: v.sku
+      }))
     });
 
-    const guardado = await nuevo.save();
-    res.status(201).json(guardado);
+    const baseGuardado = await base.save();
+
+    const variantesLocales = variantesRaw.map((v, idx) => ({
+      baseVarianteId: baseGuardado.variantes[idx]?._id,
+      nombre: v.nombre,
+      color: v.color,
+      talla: v.talla,
+      precio: v.precio,
+      stock: v.stock,
+      sku: v.sku
+    }));
+
+    const local = new ProductoLocal({
+      productoBase: baseGuardado._id,
+      local: req.localId,
+      precio,
+      stock: stockCalculado,
+      variantes: variantesLocales
+    });
+
+    const localGuardado = await local.save();
+    const poblado = await localGuardado.populate({
+      path: 'productoBase',
+      populate: { path: 'categoria', select: 'nombre parent' }
+    });
+
+    res.status(201).json(proyectarProductoLocal(poblado));
   } catch (err) {
     console.error('❌ Error al crear producto:', err);
     res.status(400).json({ error: err.message });
@@ -398,67 +408,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
       return res.json(proyectarProductoLocal(poblado));
     }
 
-    const producto = await Producto.findOne({ _id: req.params.id, local: req.localId });
-    if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
-
-    let imagen_url = producto.imagen_url;
-    let cloudinary_id = producto.cloudinary_id;
-
-    if (req.file) {
-      if (cloudinary_id) await eliminarImagen(cloudinary_id);
-      const subida = await subirImagen(req.file);
-      imagen_url = subida.secure_url;
-      cloudinary_id = subida.public_id;
-    }
-
-    const nombre = sanitizeText(req.body.nombre, { max: 120 });
-    if (!nombre) {
-      throw new Error('El nombre del producto es requerido');
-    }
-
-    const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
-
-    const precio = Number(req.body.precio);
-    if (Number.isNaN(precio)) {
-      throw new Error('El precio es inválido');
-    }
-
-    const controlarStock = String(req.body.controlarStock) === 'true';
-    const stockBase = parseStockValue(req.body.stock, controlarStock);
-    const variantes = normalizarVariantes(req.body.variantes);
-    console.log('✏️ Editar producto - req.body.variantes:', req.body.variantes);
-    console.log('✏️ Editar producto - variantes normalizadas:', variantes);
-    const stockCalculado = calcularStockTotal(variantes, stockBase);
-
-    const categoriaId = req.body.categoria;
-    if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
-      throw new Error('La categoria es invalida');
-    }
-    if (categoriaId) {
-      const categoria = await Categoria.findOne({ _id: categoriaId, local: req.localId });
-      if (!categoria) {
-        throw new Error('La categoria es invalida');
-      }
-    }
-
-    const actualizar = {
-      nombre,
-      descripcion,
-      precio,
-      stock: stockCalculado,
-      variantes,
-      imagen_url,
-      cloudinary_id,
-      categoria: categoriaId || null,
-      local: req.localId
-    };
-
-    const actualizado = await Producto.findOneAndUpdate(
-      { _id: req.params.id, local: req.localId },
-      actualizar,
-      { new: true }
-    );
-    res.json(actualizado);
+    return res.status(404).json({ error: 'Producto no encontrado' });
   } catch (err) {
     console.error('❌ Error al editar producto:', err);
     res.status(400).json({ error: err.message });
@@ -477,20 +427,7 @@ router.delete('/:id', async (req, res) => {
       return res.json({ mensaje: 'Producto eliminado correctamente' });
     }
 
-    const producto = await Producto.findOne({ _id: req.params.id, local: req.localId });
-    if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
-
-    if (producto.cloudinary_id) {
-      try {
-        await eliminarImagen(producto.cloudinary_id);
-      } catch (error) {
-        console.error('Error al eliminar imagen en Cloudinary:', error);
-        return res.status(500).json({ error: 'No se pudo eliminar la imagen del producto' });
-      }
-    }
-
-    await producto.deleteOne();
-    res.json({ mensaje: 'Producto eliminado correctamente' });
+    return res.status(404).json({ error: 'Producto no encontrado' });
   } catch (err) {
     console.error('Error al eliminar producto:', err);
     res.status(400).json({ error: err.message });

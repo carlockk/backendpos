@@ -1,7 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const Venta = require('../models/venta.model.js');
-const Producto = require('../models/product.model.js');
 const ProductoLocal = require('../models/productLocal.model.js');
 const Caja = require('../models/caja.model.js');
 const { sanitizeText, sanitizeOptionalText } = require('../utils/input');
@@ -38,24 +37,18 @@ const armarDesglosePorTipoProducto = async (ventas = [], localId) => {
   }
 
   const idsArray = [...ids];
-  const [productosLocal, productosLegacy] = await Promise.all([
-    ProductoLocal.find({ _id: { $in: idsArray }, local: localId }).populate({
-      path: 'productoBase',
-      populate: { path: 'categoria', select: 'nombre' }
-    }),
-    Producto.find({ _id: { $in: idsArray }, local: localId }).populate('categoria', 'nombre')
-  ]);
+  const productosLocal = await ProductoLocal.find({
+    _id: { $in: idsArray },
+    local: localId
+  }).populate({
+    path: 'productoBase',
+    populate: { path: 'categoria', select: 'nombre' }
+  });
 
   const categoriaPorProducto = new Map();
   productosLocal.forEach((producto) => {
     const categoriaNombre = producto.productoBase?.categoria?.nombre || 'Sin categoria';
     categoriaPorProducto.set(producto._id.toString(), categoriaNombre);
-  });
-  productosLegacy.forEach((producto) => {
-    categoriaPorProducto.set(
-      producto._id.toString(),
-      producto.categoria?.nombre || 'Sin categoria'
-    );
   });
 
   const porTipoProducto = {};
@@ -373,28 +366,19 @@ router.post('/', async (req, res) => {
         throw error;
       }
 
-      let producto = await ProductoLocal.findOne({
+      const producto = await ProductoLocal.findOne({
         _id: item.productoId,
         local: req.localId
       })
         .populate('productoBase')
         .session(session);
-      let esLocal = true;
-
-      if (!producto) {
-        producto = await Producto.findOne({
-          _id: item.productoId,
-          local: req.localId
-        }).session(session);
-        esLocal = false;
-      }
       if (!producto) {
         const error = new Error('Producto no encontrado.');
         error.status = 404;
         throw error;
       }
 
-      const nombreProducto = esLocal ? producto.productoBase?.nombre || '' : producto.nombre;
+      const nombreProducto = producto.productoBase?.nombre || '';
 
       const usaVariantes = Array.isArray(producto.variantes) && producto.variantes.length > 0;
       let varianteSeleccionada = null;
