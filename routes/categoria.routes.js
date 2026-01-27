@@ -272,4 +272,93 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+router.post('/clonar', async (req, res) => {
+  try {
+    if (req.userRole !== 'superadmin') {
+      return res.status(403).json({ error: 'No tienes permisos para clonar categorias' });
+    }
+
+    const { sourceLocalId, categoriaId, clonarTodas } = req.body || {};
+    if (!sourceLocalId || (!categoriaId && !clonarTodas)) {
+      return res.status(400).json({ error: 'Datos incompletos' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(sourceLocalId)) {
+      return res.status(400).json({ error: 'Local origen invalido' });
+    }
+    if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
+      return res.status(400).json({ error: 'Categoria invalida' });
+    }
+
+    const todas = await Categoria.find({ local: sourceLocalId });
+    const porId = new Map(todas.map((c) => [c._id.toString(), c]));
+    const hijosMap = new Map();
+    todas.forEach((c) => {
+      const parentId = c.parent ? c.parent.toString() : null;
+      if (!hijosMap.has(parentId)) hijosMap.set(parentId, []);
+      hijosMap.get(parentId).push(c);
+    });
+
+    const subtree = [];
+    if (clonarTodas) {
+      subtree.push(...todas);
+    } else {
+      const origen = await Categoria.findOne({ _id: categoriaId, local: sourceLocalId });
+      if (!origen) {
+        return res.status(404).json({ error: 'Categoria origen no encontrada' });
+      }
+
+      const stack = [origen];
+      const seen = new Set();
+      while (stack.length) {
+        const current = stack.pop();
+        if (!current || seen.has(current._id.toString())) continue;
+        seen.add(current._id.toString());
+        subtree.push(current);
+        const hijos = hijosMap.get(current._id.toString()) || [];
+        hijos.forEach((h) => stack.push(h));
+      }
+    }
+
+    const nombres = subtree.map((c) => c.nombre);
+    const existentes = await Categoria.find({ local: req.localId, nombre: { $in: nombres } });
+    if (existentes.length > 0) {
+      return res.status(400).json({ error: `Ya existe la categoria "${existentes[0].nombre}" en este local` });
+    }
+
+    const depthMap = new Map();
+    const calcDepth = (cat) => {
+      if (!cat.parent) return 0;
+      const pid = cat.parent.toString();
+      if (!porId.has(pid)) return 0;
+      if (depthMap.has(cat._id.toString())) return depthMap.get(cat._id.toString());
+      const parent = porId.get(pid);
+      const depth = calcDepth(parent) + 1;
+      depthMap.set(cat._id.toString(), depth);
+      return depth;
+    };
+    subtree.forEach((cat) => calcDepth(cat));
+    const ordered = [...subtree].sort(
+      (a, b) => (depthMap.get(a._id.toString()) || 0) - (depthMap.get(b._id.toString()) || 0)
+    );
+
+    const idMap = new Map();
+    for (const cat of ordered) {
+      const parentOld = cat.parent ? cat.parent.toString() : null;
+      const parentNew = parentOld && idMap.has(parentOld) ? idMap.get(parentOld) : null;
+      const nueva = new Categoria({
+        nombre: cat.nombre,
+        descripcion: cat.descripcion || '',
+        parent: parentNew,
+        local: req.localId
+      });
+      const guardada = await nueva.save();
+      idMap.set(cat._id.toString(), guardada._id);
+    }
+
+    res.json({ mensaje: 'Categorias clonadas correctamente', cantidad: ordered.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al clonar categorias' });
+  }
+});
+
 module.exports = router;
