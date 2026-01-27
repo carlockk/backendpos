@@ -81,6 +81,7 @@ router.post('/', async (req, res) => {
   try {
     const productosLimpios = productos.map((item) => ({
       ...item,
+      productoBaseId: item?.productoBaseId || null,
       nombre: sanitizeOptionalText(item?.nombre, { max: 120 }) || '',
       observacion: sanitizeOptionalText(item?.observacion, { max: 120 }) || '',
       varianteNombre: sanitizeOptionalText(item?.varianteNombre, { max: 80 }) || ''
