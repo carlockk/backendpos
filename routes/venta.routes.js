@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Venta = require('../models/venta.model.js');
 const Producto = require('../models/product.model.js');
+const ProductoLocal = require('../models/productLocal.model.js');
 const Caja = require('../models/caja.model.js');
 const { sanitizeText, sanitizeOptionalText } = require('../utils/input');
 const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
@@ -36,16 +37,26 @@ const armarDesglosePorTipoProducto = async (ventas = [], localId) => {
     return {};
   }
 
-  const productos = await Producto.find({
-    _id: { $in: [...ids] },
-    local: localId
-  }).populate('categoria', 'nombre');
-  const categoriaPorProducto = new Map(
-    productos.map((producto) => [
+  const idsArray = [...ids];
+  const [productosLocal, productosLegacy] = await Promise.all([
+    ProductoLocal.find({ _id: { $in: idsArray }, local: localId }).populate({
+      path: 'productoBase',
+      populate: { path: 'categoria', select: 'nombre' }
+    }),
+    Producto.find({ _id: { $in: idsArray }, local: localId }).populate('categoria', 'nombre')
+  ]);
+
+  const categoriaPorProducto = new Map();
+  productosLocal.forEach((producto) => {
+    const categoriaNombre = producto.productoBase?.categoria?.nombre || 'Sin categoria';
+    categoriaPorProducto.set(producto._id.toString(), categoriaNombre);
+  });
+  productosLegacy.forEach((producto) => {
+    categoriaPorProducto.set(
       producto._id.toString(),
       producto.categoria?.nombre || 'Sin categoria'
-    ])
-  );
+    );
+  });
 
   const porTipoProducto = {};
   ventas.forEach((venta) => {
@@ -362,15 +373,28 @@ router.post('/', async (req, res) => {
         throw error;
       }
 
-      const producto = await Producto.findOne({
+      let producto = await ProductoLocal.findOne({
         _id: item.productoId,
         local: req.localId
-      }).session(session);
+      })
+        .populate('productoBase')
+        .session(session);
+      let esLocal = true;
+
+      if (!producto) {
+        producto = await Producto.findOne({
+          _id: item.productoId,
+          local: req.localId
+        }).session(session);
+        esLocal = false;
+      }
       if (!producto) {
         const error = new Error('Producto no encontrado.');
         error.status = 404;
         throw error;
       }
+
+      const nombreProducto = esLocal ? producto.productoBase?.nombre || '' : producto.nombre;
 
       const usaVariantes = Array.isArray(producto.variantes) && producto.variantes.length > 0;
       let varianteSeleccionada = null;
@@ -386,14 +410,14 @@ router.post('/', async (req, res) => {
 
       if (usaVariantes) {
         if (!varianteSeleccionada) {
-          const error = new Error(`Debes seleccionar una variante para ${producto.nombre}.`);
+          const error = new Error(`Debes seleccionar una variante para ${nombreProducto}.`);
           error.status = 400;
           throw error;
         }
 
         if (varianteSeleccionada.stock < cantidadSolicitada) {
           const error = new Error(
-            `Stock insuficiente para ${producto.nombre} (${varianteSeleccionada.nombre}). Disponible: ${varianteSeleccionada.stock}`
+            `Stock insuficiente para ${nombreProducto} (${varianteSeleccionada.nombre}). Disponible: ${varianteSeleccionada.stock}`
           );
           error.status = 400;
           throw error;
@@ -405,7 +429,7 @@ router.post('/', async (req, res) => {
         const controlaStock = typeof producto.stock === 'number' && !Number.isNaN(producto.stock);
         if (controlaStock) {
           if (producto.stock < cantidadSolicitada) {
-            const error = new Error(`Stock insuficiente para ${producto.nombre}. Disponible: ${producto.stock}`);
+            const error = new Error(`Stock insuficiente para ${nombreProducto}. Disponible: ${producto.stock}`);
             error.status = 400;
             throw error;
           }
@@ -426,7 +450,7 @@ router.post('/', async (req, res) => {
 
       productosRegistrados.push({
         productoId: producto._id,
-        nombre: producto.nombre,
+        nombre: nombreProducto || 'Producto sin nombre',
         precio_unitario: precioUnitario,
         cantidad: cantidadSolicitada,
         observacion: sanitizeOptionalText(item.observacion, { max: 120 }) || '',
