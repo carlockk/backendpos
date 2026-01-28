@@ -111,6 +111,22 @@ router.get('/:id/lotes', async (req, res) => {
   }
 });
 
+router.get('/movimientos', async (req, res) => {
+  try {
+    const filtro = { local: req.localId };
+    if (req.query?.insumo) {
+      if (!mongoose.Types.ObjectId.isValid(req.query.insumo)) {
+        return res.status(400).json({ error: 'Insumo invalido' });
+      }
+      filtro.insumo = req.query.insumo;
+    }
+    const movimientos = await InsumoMovimiento.find(filtro).sort({ fecha: -1 });
+    res.json(movimientos);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener movimientos' });
+  }
+});
+
 router.get('/:id/movimientos', async (req, res) => {
   try {
     const movimientos = await InsumoMovimiento.find({
