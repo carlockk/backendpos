@@ -43,6 +43,7 @@ const ventaClienteRoutes = require("./routes/ventaCliente.routes");
 const pagosRoutes = require("./routes/pagos.routes");
 const insumoRoutes = require("./routes/insumo.routes");
 const localesRoutes = require("./routes/locales.routes");
+const reciboConfigRoutes = require("./routes/reciboConfig.routes");
 
 // Swagger
 const { swaggerUi, specs } = require("./swagger");
@@ -61,6 +62,7 @@ app.use("/api/ventasCliente", ventaClienteRoutes);
 app.use("/api/pagos", pagosRoutes);
 app.use("/api/insumos", insumoRoutes);
 app.use("/api/locales", localesRoutes);
+app.use("/api/recibo-config", reciboConfigRoutes);
 
 // 🌍 Debug conexión
 console.log("🌍 MONGO_URI:", process.env.MONGO_URI);
