@@ -6,9 +6,12 @@ const insumoSchema = new mongoose.Schema(
     descripcion: { type: String, trim: true },
     unidad: { type: String, required: true, trim: true },
     stock_total: { type: Number, default: 0 },
-    stock_minimo: { type: Number, default: 0 },
-    alerta_vencimiento_dias: { type: Number, default: 7 },
-    local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', required: true },
+  stock_minimo: { type: Number, default: 0 },
+  alerta_vencimiento_dias: { type: Number, default: 7 },
+  last_alerta_stock_en: { type: Date, default: null },
+  last_alerta_vencimiento_en: { type: Date, default: null },
+  last_alerta_vencimiento_estado: { type: String, default: null },
+  local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', required: true },
     creado_en: { type: Date, default: Date.now },
     actualizado_en: { type: Date, default: Date.now }
   }
