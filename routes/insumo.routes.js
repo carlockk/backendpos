@@ -342,19 +342,42 @@ router.post('/:id/movimientos', async (req, res) => {
         if (!lote) {
           return res.status(404).json({ error: 'Lote no encontrado' });
         }
+        if (lote.cantidad < cantidad) {
+          return res.status(400).json({ error: 'Cantidad supera el stock del lote' });
+        }
+        lote.cantidad -= cantidad;
+        await lote.save({ session });
       } else {
-        lote = await InsumoLote.findOne({ insumo: insumo._id, local: req.localId, cantidad: { $gt: 0 } })
+        const lotesDisponibles = await InsumoLote.find({
+          insumo: insumo._id,
+          local: req.localId,
+          cantidad: { $gt: 0 }
+        })
           .sort({ fecha_ingreso: 1 })
           .session(session);
+
+        if (!lotesDisponibles.length) {
+          return res.status(400).json({ error: 'No hay lote disponible para salida' });
+        }
+
+        const totalDisponible = lotesDisponibles.reduce((acc, item) => acc + (item.cantidad || 0), 0);
+        if (totalDisponible < cantidad) {
+          return res.status(400).json({ error: 'Cantidad supera el stock disponible' });
+        }
+
+        let restante = cantidad;
+        for (const item of lotesDisponibles) {
+          if (restante <= 0) break;
+          const consumir = Math.min(item.cantidad, restante);
+          item.cantidad -= consumir;
+          restante -= consumir;
+          await item.save({ session });
+          if (!lote) {
+            lote = item;
+          }
+        }
       }
-      if (!lote) {
-        return res.status(400).json({ error: 'No hay lote disponible para salida' });
-      }
-      if (lote.cantidad < cantidad) {
-        return res.status(400).json({ error: 'Cantidad supera el stock del lote' });
-      }
-      lote.cantidad -= cantidad;
-      await lote.save({ session });
+
       insumo.stock_total = Math.max(0, insumo.stock_total - cantidad);
     }
 
