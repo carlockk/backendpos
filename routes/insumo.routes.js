@@ -120,7 +120,9 @@ router.get('/movimientos', async (req, res) => {
       }
       filtro.insumo = req.query.insumo;
     }
-    const movimientos = await InsumoMovimiento.find(filtro).sort({ fecha: -1 });
+    const movimientos = await InsumoMovimiento.find(filtro)
+      .populate('insumo', 'nombre')
+      .sort({ fecha: -1 });
     res.json(movimientos);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener movimientos' });
