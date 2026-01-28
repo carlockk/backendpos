@@ -64,8 +64,10 @@ app.use("/api/insumos", insumoRoutes);
 app.use("/api/locales", localesRoutes);
 app.use("/api/recibo-config", reciboConfigRoutes);
 
-// 🌍 Debug conexión
-console.log("🌍 MONGO_URI:", process.env.MONGO_URI);
+// 🔌 Levantar servidor primero para evitar timeout en Render
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Servidor corriendo en puerto ${PORT}`);
+});
 
 // 🔌 Conexión MongoDB
 mongoose
@@ -74,9 +76,6 @@ mongoose
   })
   .then(() => {
     console.log("✅ Conectado a MongoDB");
-    app.listen(PORT, () => {
-      console.log(`Servidor corriendo en puerto ${PORT}`);
-    });
   })
   .catch((err) => {
     console.error("❌ Error al conectar a MongoDB:", err);
