@@ -323,7 +323,6 @@ router.post('/', async (req, res) => {
     const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
     const unidad = sanitizeText(req.body.unidad, { max: 20 });
     const categoriaRaw = req.body.categoria;
-    const categoriaRaw = req.body.categoria;
     const stockMinimo = toNumberOrNull(req.body.stock_minimo);
     const alertaVenc = toNumberOrNull(req.body.alerta_vencimiento_dias);
 
