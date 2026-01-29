@@ -34,6 +34,27 @@ router.post('/', async (req, res) => {
   }
 });
 
+router.put('/orden', async (req, res) => {
+  try {
+    if (!['admin', 'superadmin'].includes(req.userRole)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+    const orden = Array.isArray(req.body?.orden) ? req.body.orden : [];
+    const ids = Array.from(new Set(orden.filter((id) => mongoose.Types.ObjectId.isValid(id))));
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'Orden invalido' });
+    }
+    await Promise.all(
+      ids.map((id, index) =>
+        InsumoCategoria.updateOne({ _id: id, local: req.localId }, { orden: index + 1 })
+      )
+    );
+    res.json({ mensaje: 'Orden actualizado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar orden' });
+  }
+});
+
 router.put('/:id', async (req, res) => {
   try {
     if (!['admin', 'superadmin'].includes(req.userRole)) {
@@ -65,27 +86,6 @@ router.delete('/:id', async (req, res) => {
     res.json({ mensaje: 'Categoria eliminada' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar categoria' });
-  }
-});
-
-router.put('/orden', async (req, res) => {
-  try {
-    if (!['admin', 'superadmin'].includes(req.userRole)) {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-    const orden = Array.isArray(req.body?.orden) ? req.body.orden : [];
-    const ids = Array.from(new Set(orden.filter((id) => mongoose.Types.ObjectId.isValid(id))));
-    if (ids.length === 0) {
-      return res.status(400).json({ error: 'Orden invalido' });
-    }
-    await Promise.all(
-      ids.map((id, index) =>
-        InsumoCategoria.updateOne({ _id: id, local: req.localId }, { orden: index + 1 })
-      )
-    );
-    res.json({ mensaje: 'Orden actualizado' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar orden' });
   }
 });
 
