@@ -414,9 +414,20 @@ router.delete('/:id', async (req, res) => {
 router.get('/:id/lotes', async (req, res) => {
   try {
     const incluirOcultos = String(req.query?.incluir_ocultos) === 'true';
+    const incluirSinInfo = String(req.query?.incluir_sin_info) === 'true';
     const filtro = { insumo: req.params.id, local: req.localId };
     if (!incluirOcultos) {
       filtro.$or = [{ activo: true }, { activo: { $exists: false } }];
+    }
+    if (!incluirSinInfo) {
+      filtro.$and = [
+        {
+          $or: [
+            { lote: { $exists: true, $ne: '' } },
+            { fecha_vencimiento: { $ne: null } }
+          ]
+        }
+      ];
     }
     const lotes = await InsumoLote.find(filtro).sort({ fecha_ingreso: 1 });
     res.json(lotes);
