@@ -42,6 +42,7 @@ const clienteRoutes = require("./routes/cliente.routes");
 const ventaClienteRoutes = require("./routes/ventaCliente.routes");
 const pagosRoutes = require("./routes/pagos.routes");
 const insumoRoutes = require("./routes/insumo.routes");
+const insumoCategoriaRoutes = require("./routes/insumoCategoria.routes");
 const localesRoutes = require("./routes/locales.routes");
 const reciboConfigRoutes = require("./routes/reciboConfig.routes");
 
@@ -61,6 +62,7 @@ app.use("/api/clientes", clienteRoutes);
 app.use("/api/ventasCliente", ventaClienteRoutes);
 app.use("/api/pagos", pagosRoutes);
 app.use("/api/insumos", insumoRoutes);
+app.use("/api/insumo-categorias", insumoCategoriaRoutes);
 app.use("/api/locales", localesRoutes);
 app.use("/api/recibo-config", reciboConfigRoutes);
 

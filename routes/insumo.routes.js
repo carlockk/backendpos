@@ -67,10 +67,33 @@ router.get('/', async (req, res) => {
     if (!incluirOcultos) {
       filtro.$or = [{ activo: true }, { activo: { $exists: false } }];
     }
-    const insumos = await Insumo.find(filtro).sort({ nombre: 1 });
+    const insumos = await Insumo.find(filtro)
+      .populate('categoria', 'nombre')
+      .sort({ orden: 1, nombre: 1 });
     res.json(insumos);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener insumos' });
+  }
+});
+
+router.put('/orden', async (req, res) => {
+  try {
+    if (!['admin', 'superadmin'].includes(req.userRole)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+    const orden = Array.isArray(req.body?.orden) ? req.body.orden : [];
+    const ids = Array.from(new Set(orden.filter((id) => mongoose.Types.ObjectId.isValid(id))));
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'Orden invalido' });
+    }
+    await Promise.all(
+      ids.map((id, index) =>
+        Insumo.updateOne({ _id: id, local: req.localId }, { orden: index + 1 })
+      )
+    );
+    res.json({ mensaje: 'Orden actualizado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar orden' });
   }
 });
 
@@ -299,6 +322,8 @@ router.post('/', async (req, res) => {
     const nombre = sanitizeText(req.body.nombre, { max: 120 });
     const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
     const unidad = sanitizeText(req.body.unidad, { max: 20 });
+    const categoriaRaw = req.body.categoria;
+    const categoriaRaw = req.body.categoria;
     const stockMinimo = toNumberOrNull(req.body.stock_minimo);
     const alertaVenc = toNumberOrNull(req.body.alerta_vencimiento_dias);
 
@@ -311,12 +336,21 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Ya existe un insumo con ese nombre' });
     }
 
+    let categoriaId = null;
+    if (categoriaRaw) {
+      if (!mongoose.Types.ObjectId.isValid(categoriaRaw)) {
+        return res.status(400).json({ error: 'Categoria invalida' });
+      }
+      categoriaId = categoriaRaw;
+    }
+
     const nuevo = new Insumo({
       nombre,
       descripcion,
       unidad,
       stock_minimo: stockMinimo ?? 0,
       alerta_vencimiento_dias: alertaVenc ?? 7,
+      categoria: categoriaId,
       local: req.localId
     });
     const guardado = await nuevo.save();
@@ -342,6 +376,15 @@ router.put('/:id', async (req, res) => {
     insumo.descripcion = descripcion;
     if (stockMinimo !== null) insumo.stock_minimo = stockMinimo;
     if (alertaVenc !== null) insumo.alerta_vencimiento_dias = alertaVenc;
+    if (categoriaRaw !== undefined) {
+      if (categoriaRaw === null || String(categoriaRaw).trim() === '') {
+        insumo.categoria = null;
+      } else if (!mongoose.Types.ObjectId.isValid(categoriaRaw)) {
+        return res.status(400).json({ error: 'Categoria invalida' });
+      } else {
+        insumo.categoria = categoriaRaw;
+      }
+    }
     insumo.actualizado_en = new Date();
 
     const actualizado = await insumo.save();
