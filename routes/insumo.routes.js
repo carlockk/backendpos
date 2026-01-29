@@ -436,6 +436,63 @@ router.get('/:id/lotes', async (req, res) => {
   }
 });
 
+router.post('/:id/lotes', async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+
+    const loteNombre = sanitizeOptionalText(req.body.lote, { max: 80 }) || '';
+    const fechaVenc = req.body.fecha_vencimiento ? new Date(req.body.fecha_vencimiento) : null;
+    const cantidad = req.body.cantidad === undefined || req.body.cantidad === null || req.body.cantidad === ''
+      ? 0
+      : parsePositiveNumber(req.body.cantidad, 'cantidad');
+
+    if (!loteNombre && !fechaVenc) {
+      return res.status(400).json({ error: 'Debes indicar un lote o una fecha de vencimiento' });
+    }
+
+    const insumo = await Insumo.findOne({ _id: req.params.id, local: req.localId }).session(session);
+    if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
+    if (insumo.activo === false) {
+      return res.status(400).json({ error: 'El insumo esta oculto' });
+    }
+
+    const nuevoLote = new InsumoLote({
+      insumo: insumo._id,
+      local: req.localId,
+      lote: loteNombre || undefined,
+      fecha_vencimiento: fechaVenc || null,
+      cantidad,
+      fecha_ingreso: new Date()
+    });
+    await nuevoLote.save({ session });
+
+    if (cantidad > 0) {
+      insumo.stock_total += cantidad;
+      await insumo.save({ session });
+
+      const movimiento = new InsumoMovimiento({
+        insumo: insumo._id,
+        local: req.localId,
+        lote: nuevoLote._id,
+        tipo: 'entrada',
+        cantidad,
+        motivo: 'Registro de lote',
+        usuario: req.userId || null
+      });
+      await movimiento.save({ session });
+    }
+
+    await session.commitTransaction();
+    res.status(201).json(nuevoLote);
+  } catch (error) {
+    await session.abortTransaction().catch(() => {});
+    res.status(400).json({ error: error.message || 'Error al crear lote' });
+  } finally {
+    session.endSession();
+  }
+});
+
 router.put('/:id/lotes/:loteId/estado', async (req, res) => {
   try {
     const activo = req.body?.activo;
