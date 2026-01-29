@@ -5,6 +5,7 @@ const InsumoLote = require('../models/insumoLote.model');
 const InsumoMovimiento = require('../models/insumoMovimiento.model');
 const InsumoAlertaConfig = require('../models/insumoAlertaConfig.model');
 const Usuario = require('../models/usuario.model.js');
+const Local = require('../models/local.model');
 const { sanitizeText, sanitizeOptionalText, toNumberOrNull } = require('../utils/input');
 const { sendMail } = require('../utils/mailer');
 const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
@@ -61,10 +62,33 @@ const evaluarVencimientos = (lotes, alertaDias) => {
 
 router.get('/', async (req, res) => {
   try {
-    const insumos = await Insumo.find({ local: req.localId }).sort({ nombre: 1 });
+    const incluirOcultos = String(req.query?.incluir_ocultos) === 'true';
+    const filtro = { local: req.localId };
+    if (!incluirOcultos) {
+      filtro.$or = [{ activo: true }, { activo: { $exists: false } }];
+    }
+    const insumos = await Insumo.find(filtro).sort({ nombre: 1 });
     res.json(insumos);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener insumos' });
+  }
+});
+
+router.put('/:id/estado', async (req, res) => {
+  try {
+    const activo = req.body?.activo;
+    if (typeof activo !== 'boolean') {
+      return res.status(400).json({ error: 'Estado invalido' });
+    }
+    const insumo = await Insumo.findOneAndUpdate(
+      { _id: req.params.id, local: req.localId },
+      { activo, actualizado_en: new Date() },
+      { new: true }
+    );
+    if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
+    res.json(insumo);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar insumo' });
   }
 });
 
@@ -112,12 +136,16 @@ router.post('/alertas/resumen', async (req, res) => {
     if (destinatarios.length === 0) {
       return res.status(400).json({ error: 'No hay destinatarios configurados' });
     }
-    const insumos = await Insumo.find({ local: req.localId });
+    const insumos = await Insumo.find({
+      local: req.localId,
+      $or: [{ activo: true }, { activo: { $exists: false } }]
+    });
     const insumosBajos = insumos.filter(
       (insumo) => Number(insumo.stock_total || 0) <= Number(insumo.stock_minimo || 0)
     );
     const lotes = await InsumoLote.find({
       local: req.localId,
+      activo: true,
       cantidad: { $gt: 0 },
       fecha_vencimiento: { $ne: null }
     });
@@ -172,6 +200,97 @@ router.post('/alertas/resumen', async (req, res) => {
     res.json({ mensaje: 'Resumen enviado' });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Error al enviar resumen' });
+  }
+});
+
+router.post('/clonar', async (req, res) => {
+  try {
+    if (req.userRole !== 'superadmin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const sourceLocalId = req.body.sourceLocalId || req.localId;
+    const targetLocalId = req.body.targetLocalId;
+    const insumoId = req.body.insumoId;
+    const clonarTodos = Boolean(req.body.clonarTodos);
+
+    if (!mongoose.Types.ObjectId.isValid(sourceLocalId || '')) {
+      return res.status(400).json({ error: 'Local origen invalido' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(targetLocalId || '')) {
+      return res.status(400).json({ error: 'Local destino invalido' });
+    }
+    if (String(sourceLocalId) === String(targetLocalId)) {
+      return res.status(400).json({ error: 'El local destino debe ser distinto' });
+    }
+
+    const [sourceLocal, targetLocal] = await Promise.all([
+      Local.findById(sourceLocalId),
+      Local.findById(targetLocalId)
+    ]);
+    if (!sourceLocal || !targetLocal) {
+      return res.status(400).json({ error: 'Local no encontrado' });
+    }
+
+    let origen = [];
+    if (clonarTodos) {
+      origen = await Insumo.find({
+        local: sourceLocalId,
+        $or: [{ activo: true }, { activo: { $exists: false } }]
+      }).lean();
+      if (!origen.length) {
+        return res.status(400).json({ error: 'No hay insumos para clonar' });
+      }
+    } else {
+      if (!mongoose.Types.ObjectId.isValid(insumoId || '')) {
+        return res.status(400).json({ error: 'Insumo invalido' });
+      }
+      const insumo = await Insumo.findOne({ _id: insumoId, local: sourceLocalId }).lean();
+      if (!insumo) {
+        return res.status(404).json({ error: 'Insumo no encontrado' });
+      }
+      origen = [insumo];
+    }
+
+    let creados = 0;
+    let omitidos = 0;
+    const nuevos = [];
+
+    for (const insumo of origen) {
+      const existe = await Insumo.findOne({
+        local: targetLocalId,
+        nombre: insumo.nombre
+      }).lean();
+      if (existe) {
+        omitidos += 1;
+        continue;
+      }
+      nuevos.push({
+        nombre: insumo.nombre,
+        descripcion: insumo.descripcion || '',
+        unidad: insumo.unidad,
+        stock_total: 0,
+        stock_minimo: insumo.stock_minimo || 0,
+        alerta_vencimiento_dias: insumo.alerta_vencimiento_dias || 7,
+        local: targetLocalId,
+        activo: true,
+        creado_en: new Date(),
+        actualizado_en: new Date()
+      });
+    }
+
+    if (nuevos.length) {
+      await Insumo.insertMany(nuevos);
+      creados = nuevos.length;
+    }
+
+    res.json({
+      mensaje: `Clonado completado. Creados: ${creados}, Omitidos: ${omitidos}`,
+      creados,
+      omitidos
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al clonar insumos' });
   }
 });
 
@@ -251,11 +370,103 @@ router.delete('/:id', async (req, res) => {
 
 router.get('/:id/lotes', async (req, res) => {
   try {
-    const lotes = await InsumoLote.find({ insumo: req.params.id, local: req.localId })
-      .sort({ fecha_ingreso: 1 });
+    const incluirOcultos = String(req.query?.incluir_ocultos) === 'true';
+    const filtro = { insumo: req.params.id, local: req.localId };
+    if (!incluirOcultos) {
+      filtro.$or = [{ activo: true }, { activo: { $exists: false } }];
+    }
+    const lotes = await InsumoLote.find(filtro).sort({ fecha_ingreso: 1 });
     res.json(lotes);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener lotes' });
+  }
+});
+
+router.put('/:id/lotes/:loteId/estado', async (req, res) => {
+  try {
+    const activo = req.body?.activo;
+    if (typeof activo !== 'boolean') {
+      return res.status(400).json({ error: 'Estado invalido' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.loteId)) {
+      return res.status(400).json({ error: 'Lote invalido' });
+    }
+    const lote = await InsumoLote.findOneAndUpdate(
+      {
+        _id: req.params.loteId,
+        insumo: req.params.id,
+        local: req.localId
+      },
+      { activo },
+      { new: true }
+    );
+    if (!lote) {
+      return res.status(404).json({ error: 'Lote no encontrado' });
+    }
+    res.json(lote);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar lote' });
+  }
+});
+
+router.delete('/:id/lotes', async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+    const insumo = await Insumo.findOne({ _id: req.params.id, local: req.localId }).session(session);
+    if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
+
+    const lotes = await InsumoLote.find({ insumo: req.params.id, local: req.localId }).session(session);
+    const totalLotes = lotes.reduce((acc, lote) => acc + (lote.cantidad || 0), 0);
+
+    await InsumoLote.deleteMany({ insumo: req.params.id, local: req.localId }).session(session);
+
+    insumo.stock_total = Math.max(0, Number(insumo.stock_total || 0) - totalLotes);
+    await insumo.save({ session });
+
+    await InsumoMovimiento.deleteMany({ insumo: req.params.id, local: req.localId }).session(session);
+
+    await session.commitTransaction();
+    res.json({ mensaje: 'Lotes eliminados' });
+  } catch (error) {
+    await session.abortTransaction().catch(() => {});
+    res.status(500).json({ error: 'Error al eliminar lotes' });
+  } finally {
+    session.endSession();
+  }
+});
+
+router.delete('/:id/lotes/:loteId', async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+    const insumo = await Insumo.findOne({ _id: req.params.id, local: req.localId }).session(session);
+    if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.loteId)) {
+      return res.status(400).json({ error: 'Lote invalido' });
+    }
+
+    const lote = await InsumoLote.findOne({
+      _id: req.params.loteId,
+      insumo: req.params.id,
+      local: req.localId
+    }).session(session);
+    if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
+
+    await InsumoLote.deleteOne({ _id: lote._id }).session(session);
+    insumo.stock_total = Math.max(0, Number(insumo.stock_total || 0) - Number(lote.cantidad || 0));
+    await insumo.save({ session });
+
+    await InsumoMovimiento.deleteMany({ lote: lote._id, local: req.localId }).session(session);
+
+    await session.commitTransaction();
+    res.json({ mensaje: 'Lote eliminado' });
+  } catch (error) {
+    await session.abortTransaction().catch(() => {});
+    res.status(500).json({ error: 'Error al eliminar lote' });
+  } finally {
+    session.endSession();
   }
 });
 
@@ -308,6 +519,9 @@ router.post('/:id/movimientos', async (req, res) => {
     if (!insumo) {
       return res.status(404).json({ error: 'Insumo no encontrado' });
     }
+    if (insumo.activo === false) {
+      return res.status(400).json({ error: 'El insumo esta oculto' });
+    }
 
     let lote = null;
     if (tipo === 'entrada') {
@@ -318,6 +532,9 @@ router.post('/:id/movimientos', async (req, res) => {
         lote = await InsumoLote.findOne({ _id: loteId, local: req.localId }).session(session);
         if (!lote) {
           return res.status(404).json({ error: 'Lote no encontrado' });
+        }
+        if (lote.activo === false) {
+          return res.status(400).json({ error: 'El lote esta oculto' });
         }
         lote.cantidad += cantidad;
         await lote.save({ session });
@@ -342,6 +559,9 @@ router.post('/:id/movimientos', async (req, res) => {
         if (!lote) {
           return res.status(404).json({ error: 'Lote no encontrado' });
         }
+        if (lote.activo === false) {
+          return res.status(400).json({ error: 'El lote esta oculto' });
+        }
         if (lote.cantidad < cantidad) {
           return res.status(400).json({ error: 'Cantidad supera el stock del lote' });
         }
@@ -351,6 +571,7 @@ router.post('/:id/movimientos', async (req, res) => {
         const lotesDisponibles = await InsumoLote.find({
           insumo: insumo._id,
           local: req.localId,
+          $or: [{ activo: true }, { activo: { $exists: false } }],
           cantidad: { $gt: 0 }
         })
           .sort({ fecha_ingreso: 1 })
@@ -404,6 +625,7 @@ router.post('/:id/movimientos', async (req, res) => {
 
         const refreshed = await Insumo.findById(insumo._id);
         if (!refreshed) return;
+        if (refreshed.activo === false) return;
 
         const alertaStock = Number(refreshed.stock_total || 0) <= Number(refreshed.stock_minimo || 0);
         const hoy = new Date();
@@ -419,6 +641,7 @@ router.post('/:id/movimientos', async (req, res) => {
         const lotes = await InsumoLote.find({
           insumo: refreshed._id,
           local: req.localId,
+          $or: [{ activo: true }, { activo: { $exists: false } }],
           cantidad: { $gt: 0 },
           fecha_vencimiento: { $ne: null }
         });
