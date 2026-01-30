@@ -366,6 +366,7 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
+    console.log('PUT /insumos/:id body', req.body);
     const nombre = sanitizeText(req.body.nombre, { max: 120 });
     const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
     const unidad = sanitizeText(req.body.unidad, { max: 20 });
@@ -373,6 +374,7 @@ router.put('/:id', async (req, res) => {
     if (categoriaRaw && typeof categoriaRaw === 'object' && categoriaRaw._id) {
       categoriaRaw = categoriaRaw._id;
     }
+    const stockTotalRaw = req.body.stock_total;
     const stockMinimo = toNumberOrNull(req.body.stock_minimo);
     const alertaVenc = toNumberOrNull(req.body.alerta_vencimiento_dias);
 
@@ -405,7 +407,9 @@ router.put('/:id', async (req, res) => {
     const actualizado = await insumo.save();
     res.json(actualizado);
   } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar insumo' });
+    console.error('Error al actualizar insumo:', error);
+    console.error('Body recibido:', req.body);
+    res.status(500).json({ error: error.message || 'Error al actualizar insumo' });
   }
 });
 
