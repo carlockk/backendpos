@@ -111,7 +111,8 @@ router.put('/:id/estado', async (req, res) => {
     if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
     res.json(insumo);
   } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar insumo' });
+    console.error('Error al actualizar insumo:', error);
+    res.status(500).json({ error: error.message || 'Error al actualizar insumo' });
   }
 });
 
