@@ -326,6 +326,7 @@ router.post('/', async (req, res) => {
     if (categoriaRaw && typeof categoriaRaw === 'object' && categoriaRaw._id) {
       categoriaRaw = categoriaRaw._id;
     }
+    const stockTotalRaw = req.body.stock_total;
     const stockMinimo = toNumberOrNull(req.body.stock_minimo);
     const alertaVenc = toNumberOrNull(req.body.alerta_vencimiento_dias);
 
@@ -382,6 +383,13 @@ router.put('/:id', async (req, res) => {
     insumo.descripcion = descripcion;
     if (stockMinimo !== null) insumo.stock_minimo = stockMinimo;
     if (alertaVenc !== null) insumo.alerta_vencimiento_dias = alertaVenc;
+    if (stockTotalRaw !== undefined) {
+      const stockTotal = toNumberOrNull(stockTotalRaw);
+      if (stockTotal === null || stockTotal < 0) {
+        return res.status(400).json({ error: 'Stock total invalido' });
+      }
+      insumo.stock_total = stockTotal;
+    }
     if (categoriaRaw !== undefined) {
       if (categoriaRaw === null || String(categoriaRaw).trim() === '') {
         insumo.categoria = null;
