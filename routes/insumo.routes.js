@@ -322,7 +322,10 @@ router.post('/', async (req, res) => {
     const nombre = sanitizeText(req.body.nombre, { max: 120 });
     const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
     const unidad = sanitizeText(req.body.unidad, { max: 20 });
-    const categoriaRaw = req.body.categoria;
+    let categoriaRaw = req.body.categoria;
+    if (categoriaRaw && typeof categoriaRaw === 'object' && categoriaRaw._id) {
+      categoriaRaw = categoriaRaw._id;
+    }
     const stockMinimo = toNumberOrNull(req.body.stock_minimo);
     const alertaVenc = toNumberOrNull(req.body.alerta_vencimiento_dias);
 
@@ -364,7 +367,10 @@ router.put('/:id', async (req, res) => {
     const nombre = sanitizeText(req.body.nombre, { max: 120 });
     const descripcion = sanitizeOptionalText(req.body.descripcion, { max: 300 }) || '';
     const unidad = sanitizeText(req.body.unidad, { max: 20 });
-    const categoriaRaw = req.body.categoria;
+    let categoriaRaw = req.body.categoria;
+    if (categoriaRaw && typeof categoriaRaw === 'object' && categoriaRaw._id) {
+      categoriaRaw = categoriaRaw._id;
+    }
     const stockMinimo = toNumberOrNull(req.body.stock_minimo);
     const alertaVenc = toNumberOrNull(req.body.alerta_vencimiento_dias);
 
