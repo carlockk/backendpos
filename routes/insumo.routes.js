@@ -635,7 +635,8 @@ router.delete('/movimientos', async (req, res) => {
     const result = await InsumoMovimiento.deleteMany(filtro);
     res.json({ mensaje: 'Movimientos eliminados', eliminados: result.deletedCount || 0 });
   } catch (error) {
-    res.status(500).json({ error: 'Error al eliminar movimientos' });
+    console.error('Error al eliminar movimientos:', error);
+    res.status(500).json({ error: error.message || 'Error al eliminar movimientos' });
   }
 });
 
