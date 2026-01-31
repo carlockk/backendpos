@@ -8,6 +8,7 @@ const insumoMovimientoSchema = new mongoose.Schema(
     tipo: { type: String, enum: ['entrada', 'salida'], required: true },
     cantidad: { type: Number, required: true },
     motivo: { type: String, trim: true },
+    nota: { type: String, trim: true },
     usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', default: null },
     fecha: { type: Date, default: Date.now }
   }

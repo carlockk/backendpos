@@ -488,6 +488,8 @@ router.post('/:id/lotes', async (req, res) => {
 
     if (cantidad > 0) {
       insumo.stock_total += cantidad;
+      insumo.ultima_nota = null;
+      insumo.actualizado_en = new Date();
       await insumo.save({ session });
 
       const movimiento = new InsumoMovimiento({
@@ -637,6 +639,7 @@ router.post('/:id/movimientos', async (req, res) => {
     const tipo = sanitizeText(req.body.tipo, { max: 10 });
     const cantidad = parsePositiveNumber(req.body.cantidad, 'cantidad');
     const motivo = sanitizeOptionalText(req.body.motivo, { max: 200 }) || '';
+    const nota = sanitizeOptionalText(req.body.nota, { max: 500 }) || '';
     const loteId = req.body.loteId;
     const loteNombre = sanitizeOptionalText(req.body.lote, { max: 80 }) || '';
     const fechaVenc = req.body.fecha_vencimiento ? new Date(req.body.fecha_vencimiento) : null;
@@ -732,6 +735,9 @@ router.post('/:id/movimientos', async (req, res) => {
       insumo.stock_total = Math.max(0, insumo.stock_total - cantidad);
     }
 
+    const notaFinal = nota ? String(nota).trim() : '';
+    insumo.ultima_nota = notaFinal ? notaFinal : null;
+    insumo.actualizado_en = new Date();
     await insumo.save({ session });
 
     const movimiento = new InsumoMovimiento({
@@ -741,6 +747,7 @@ router.post('/:id/movimientos', async (req, res) => {
       tipo,
       cantidad,
       motivo,
+      nota: nota || undefined,
       usuario: req.userId || null
     });
     await movimiento.save({ session });
