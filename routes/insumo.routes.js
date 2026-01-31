@@ -413,6 +413,50 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+router.delete('/movimientos', async (req, res) => {
+  try {
+    console.log('DELETE /insumos/movimientos', {
+      localId: req.localId,
+      userRole: req.userRole,
+      query: req.query
+    });
+    if (req.userRole !== 'superadmin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+    const filtro = { local: req.localId };
+    if (req.query?.insumo) {
+      if (!mongoose.Types.ObjectId.isValid(req.query.insumo)) {
+        return res.status(400).json({ error: 'Insumo invalido' });
+      }
+      filtro.insumo = req.query.insumo;
+    }
+    const result = await InsumoMovimiento.deleteMany(filtro);
+    res.json({ mensaje: 'Movimientos eliminados', eliminados: result.deletedCount || 0 });
+  } catch (error) {
+    console.error('Error al eliminar movimientos:', error);
+    res.status(500).json({ error: error.message || 'Error al eliminar movimientos' });
+  }
+});
+
+router.delete('/movimientos/:movId', async (req, res) => {
+  try {
+    if (req.userRole !== 'superadmin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.movId)) {
+      return res.status(400).json({ error: 'Movimiento invalido' });
+    }
+    const movimiento = await InsumoMovimiento.findOneAndDelete({
+      _id: req.params.movId,
+      local: req.localId
+    });
+    if (!movimiento) return res.status(404).json({ error: 'Movimiento no encontrado' });
+    res.json({ mensaje: 'Movimiento eliminado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar movimiento' });
+  }
+});
+
 router.delete('/:id', async (req, res) => {
   try {
     const insumo = await Insumo.findOne({ _id: req.params.id, local: req.localId });
@@ -617,45 +661,6 @@ router.get('/movimientos', async (req, res) => {
     res.json(movimientos);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener movimientos' });
-  }
-});
-
-router.delete('/movimientos', async (req, res) => {
-  try {
-    if (req.userRole !== 'superadmin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-    const filtro = { local: req.localId };
-    if (req.query?.insumo) {
-      if (!mongoose.Types.ObjectId.isValid(req.query.insumo)) {
-        return res.status(400).json({ error: 'Insumo invalido' });
-      }
-      filtro.insumo = req.query.insumo;
-    }
-    const result = await InsumoMovimiento.deleteMany(filtro);
-    res.json({ mensaje: 'Movimientos eliminados', eliminados: result.deletedCount || 0 });
-  } catch (error) {
-    console.error('Error al eliminar movimientos:', error);
-    res.status(500).json({ error: error.message || 'Error al eliminar movimientos' });
-  }
-});
-
-router.delete('/movimientos/:movId', async (req, res) => {
-  try {
-    if (req.userRole !== 'superadmin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-    if (!mongoose.Types.ObjectId.isValid(req.params.movId)) {
-      return res.status(400).json({ error: 'Movimiento invalido' });
-    }
-    const movimiento = await InsumoMovimiento.findOneAndDelete({
-      _id: req.params.movId,
-      local: req.localId
-    });
-    if (!movimiento) return res.status(404).json({ error: 'Movimiento no encontrado' });
-    res.json({ mensaje: 'Movimiento eliminado' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al eliminar movimiento' });
   }
 });
 
