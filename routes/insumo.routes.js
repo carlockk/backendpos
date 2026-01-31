@@ -97,6 +97,24 @@ router.put('/orden', async (req, res) => {
   }
 });
 
+router.put('/:id/nota', async (req, res) => {
+  try {
+    if (!['admin', 'superadmin'].includes(req.userRole)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+    const nota = sanitizeOptionalText(req.body.nota, { max: 500 }) || '';
+    const insumo = await Insumo.findOneAndUpdate(
+      { _id: req.params.id, local: req.localId },
+      { ultima_nota: nota.trim() ? nota.trim() : null, actualizado_en: new Date() },
+      { new: true }
+    );
+    if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
+    res.json(insumo);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar nota' });
+  }
+});
+
 router.put('/:id/estado', async (req, res) => {
   try {
     const activo = req.body?.activo;
