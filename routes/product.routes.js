@@ -13,6 +13,16 @@ const upload = multer({ storage: multer.memoryStorage() }); // Guarda la imagen 
 router.use(adjuntarScopeLocal);
 router.use(requiereLocal);
 
+const normalizeCategoriaId = (raw) => {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return null;
+    return trimmed;
+  }
+  return raw;
+};
+
 const parseStockValue = (valor, controlarStock = true) => {
   if (!controlarStock) return null;
   if (valor === undefined || valor === null || valor === '') return null;
@@ -140,7 +150,7 @@ router.post('/base', upload.single('imagen'), async (req, res) => {
       sku: v.sku
     }));
 
-    const categoriaId = req.body.categoria;
+    const categoriaId = normalizeCategoriaId(req.body.categoria);
     if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
       throw new Error('La categoria es invalida');
     }
@@ -275,7 +285,7 @@ router.post('/', upload.single('imagen'), async (req, res) => {
     const variantesRaw = normalizarVariantes(req.body.variantes);
     const stockCalculado = calcularStockTotal(variantesRaw, stockBase);
 
-    const categoriaId = req.body.categoria;
+    const categoriaId = normalizeCategoriaId(req.body.categoria);
     if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
       throw new Error('La categoria es invalida');
     }
@@ -376,7 +386,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
       }));
       const stockCalculado = calcularStockTotal(variantes, stockBase);
 
-      const categoriaId = req.body.categoria;
+      const categoriaId = normalizeCategoriaId(req.body.categoria);
       if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
         throw new Error('La categoria es invalida');
       }
