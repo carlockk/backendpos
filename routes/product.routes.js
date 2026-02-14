@@ -81,6 +81,10 @@ const normalizarVariantes = (raw) => {
 
       return {
         _id: variant._id && String(variant._id).length ? variant._id : undefined,
+        baseVarianteId:
+          variant.baseVarianteId && String(variant.baseVarianteId).length
+            ? String(variant.baseVarianteId)
+            : undefined,
         nombre,
         color: sanitizeOptionalText(variant.color, { max: 40 }) || undefined,
         talla: sanitizeOptionalText(variant.talla, { max: 40 }) || undefined,
@@ -375,8 +379,27 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
 
       const controlarStock = String(req.body.controlarStock) === 'true';
       const stockBase = parseStockValue(req.body.stock, controlarStock);
-      const variantes = normalizarVariantes(req.body.variantes).map((v) => ({
-        baseVarianteId: v._id,
+      const variantesRaw = normalizarVariantes(req.body.variantes);
+      const baseActuales = Array.isArray(productoLocal.productoBase?.variantes)
+        ? productoLocal.productoBase.variantes
+        : [];
+      const basePorId = new Map(baseActuales.map((b) => [String(b._id), b]));
+
+      const variantesBaseActualizadas = variantesRaw.map((v) => {
+        const refId = v.baseVarianteId || v._id;
+        const baseExistente = refId ? basePorId.get(String(refId)) : null;
+
+        return {
+          _id: baseExistente?._id || new mongoose.Types.ObjectId(),
+          nombre: v.nombre,
+          color: v.color,
+          talla: v.talla,
+          sku: v.sku
+        };
+      });
+
+      const variantes = variantesRaw.map((v, idx) => ({
+        baseVarianteId: variantesBaseActualizadas[idx]._id,
         nombre: v.nombre,
         color: v.color,
         talla: v.talla,
@@ -403,6 +426,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         productoLocal.productoBase.categoria = categoriaId || null;
         productoLocal.productoBase.imagen_url = imagen_url;
         productoLocal.productoBase.cloudinary_id = cloudinary_id;
+        productoLocal.productoBase.variantes = variantesBaseActualizadas;
         await productoLocal.productoBase.save();
       }
 
