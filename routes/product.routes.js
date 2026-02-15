@@ -4,6 +4,7 @@ const multer = require('multer');
 const ProductoBase = require('../models/productBase.model.js');
 const ProductoLocal = require('../models/productLocal.model.js');
 const Categoria = require('../models/categoria.model.js');
+const Agregado = require('../models/agregado.model');
 const { subirImagen, eliminarImagen } = require('../utils/cloudinary');
 const { sanitizeText, sanitizeOptionalText } = require('../utils/input');
 const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
@@ -96,6 +97,25 @@ const normalizarVariantes = (raw) => {
     .filter(Boolean);
 };
 
+const parseObjectIdArray = (raw) => {
+  let parsed = raw;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return Array.from(
+    new Set(
+      parsed
+        .map((id) => String(id || '').trim())
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    )
+  );
+};
+
 const calcularStockTotal = (variantes, stockBase) => {
   if (Array.isArray(variantes) && variantes.length > 0) {
     return variantes.reduce((acc, variante) => acc + (variante.stock || 0), 0);
@@ -112,6 +132,14 @@ const proyectarProductoLocal = (productoLocal) => {
     precio: productoLocal.precio,
     stock: productoLocal.stock,
     stock_total: productoLocal.stock_total,
+    agregados: Array.isArray(productoLocal.agregados)
+      ? productoLocal.agregados.map((agg) => {
+          if (agg && typeof agg === 'object' && agg._id) {
+            return { _id: agg._id, nombre: agg.nombre, grupo: agg.grupo || null };
+          }
+          return agg;
+        })
+      : [],
     variantes: productoLocal.variantes || [],
     creado_en: productoLocal.creado_en,
     productoBaseId: base._id || null,
@@ -235,6 +263,7 @@ router.get('/', async (_req, res) => {
         path: 'productoBase',
         populate: { path: 'categoria', select: 'nombre parent' }
       })
+      .populate({ path: 'agregados', select: 'nombre grupo', populate: { path: 'grupo', select: 'titulo' } })
       .sort({ creado_en: -1 });
 
     return res.json(locales.map(proyectarProductoLocal));
@@ -251,7 +280,7 @@ router.get('/:id', async (req, res) => {
     }).populate({
       path: 'productoBase',
       populate: { path: 'categoria', select: 'nombre parent' }
-    });
+    }).populate({ path: 'agregados', select: 'nombre grupo', populate: { path: 'grupo', select: 'titulo' } });
     if (productoLocal) {
       return res.json(proyectarProductoLocal(productoLocal));
     }
@@ -287,6 +316,7 @@ router.post('/', upload.single('imagen'), async (req, res) => {
     const controlarStock = String(req.body.controlarStock) === 'true';
     const stockBase = parseStockValue(req.body.stock, controlarStock);
     const variantesRaw = normalizarVariantes(req.body.variantes);
+    const agregadosRaw = parseObjectIdArray(req.body.agregados);
     const stockCalculado = calcularStockTotal(variantesRaw, stockBase);
 
     const categoriaId = normalizeCategoriaId(req.body.categoria);
@@ -299,6 +329,16 @@ router.post('/', upload.single('imagen'), async (req, res) => {
         throw new Error('La categoria es invalida');
       }
     }
+
+    const filtroAgregados = {
+      local: req.localId,
+      activo: true,
+      $or: [{ _id: { $in: agregadosRaw } }]
+    };
+    if (categoriaId) {
+      filtroAgregados.$or.push({ categorias: categoriaId });
+    }
+    const agregadosValidos = await Agregado.find(filtroAgregados, '_id').lean();
 
     const base = new ProductoBase({
       nombre,
@@ -331,6 +371,7 @@ router.post('/', upload.single('imagen'), async (req, res) => {
       local: req.localId,
       precio,
       stock: stockCalculado,
+      agregados: agregadosValidos.map((a) => a._id),
       variantes: variantesLocales
     });
 
@@ -338,7 +379,7 @@ router.post('/', upload.single('imagen'), async (req, res) => {
     const poblado = await localGuardado.populate({
       path: 'productoBase',
       populate: { path: 'categoria', select: 'nombre parent' }
-    });
+    }).populate({ path: 'agregados', select: 'nombre grupo', populate: { path: 'grupo', select: 'titulo' } });
 
     res.status(201).json(proyectarProductoLocal(poblado));
   } catch (err) {
@@ -380,6 +421,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
       const controlarStock = String(req.body.controlarStock) === 'true';
       const stockBase = parseStockValue(req.body.stock, controlarStock);
       const variantesRaw = normalizarVariantes(req.body.variantes);
+      const agregadosRaw = parseObjectIdArray(req.body.agregados);
       const baseActuales = Array.isArray(productoLocal.productoBase?.variantes)
         ? productoLocal.productoBase.variantes
         : [];
@@ -408,6 +450,15 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         sku: v.sku
       }));
       const stockCalculado = calcularStockTotal(variantes, stockBase);
+      const filtroAgregados = {
+        local: req.localId,
+        activo: true,
+        $or: [{ _id: { $in: agregadosRaw } }]
+      };
+      if (categoriaId) {
+        filtroAgregados.$or.push({ categorias: categoriaId });
+      }
+      const agregadosValidos = await Agregado.find(filtroAgregados, '_id').lean();
 
       const categoriaId = normalizeCategoriaId(req.body.categoria);
       if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
@@ -432,13 +483,14 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
 
       productoLocal.precio = precio;
       productoLocal.stock = stockCalculado;
+      productoLocal.agregados = agregadosValidos.map((a) => a._id);
       productoLocal.variantes = variantes;
 
       const actualizado = await productoLocal.save();
       const poblado = await actualizado.populate({
         path: 'productoBase',
         populate: { path: 'categoria', select: 'nombre parent' }
-      });
+      }).populate({ path: 'agregados', select: 'nombre grupo', populate: { path: 'grupo', select: 'titulo' } });
       return res.json(proyectarProductoLocal(poblado));
     }
 

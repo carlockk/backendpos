@@ -31,6 +31,7 @@ const productLocalSchema = new mongoose.Schema(
     activo: { type: Boolean, default: true },
     precio: { type: Number, required: true },
     stock: { type: Number, default: null },
+    agregados: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Agregado' }],
     variantes: [varianteLocalSchema],
     creado_en: { type: Date, default: Date.now }
   },
