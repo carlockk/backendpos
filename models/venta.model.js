@@ -16,6 +16,13 @@ const ventaSchema = new mongoose.Schema({
           nombre: String,
           valor: String
         }
+      ],
+      agregados: [
+        {
+          agregadoId: mongoose.Schema.Types.ObjectId,
+          nombre: String,
+          precio: Number
+        }
       ]
     }
   ],

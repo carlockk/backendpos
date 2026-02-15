@@ -19,6 +19,22 @@ const obtenerAtributosVariante = (variante) => {
   return atributos;
 };
 
+const normalizarAgregadosVenta = (raw) => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((agg) => {
+      const nombre = sanitizeOptionalText(agg?.nombre, { max: 80 }) || '';
+      if (!nombre) return null;
+      const precio = Number(agg?.precio);
+      return {
+        agregadoId: mongoose.Types.ObjectId.isValid(agg?.agregadoId) ? agg.agregadoId : null,
+        nombre,
+        precio: Number.isFinite(precio) && precio > 0 ? precio : 0
+      };
+    })
+    .filter(Boolean);
+};
+
 const calcularStockDesdeVariantes = (variantes = []) =>
   variantes.reduce((acc, variante) => acc + (variante.stock || 0), 0);
 
@@ -440,7 +456,8 @@ router.post('/', async (req, res) => {
         observacion: sanitizeOptionalText(item.observacion, { max: 120 }) || '',
         varianteId: varianteSeleccionada?._id || null,
         varianteNombre: item.varianteNombre || varianteSeleccionada?.nombre || null,
-        atributos: obtenerAtributosVariante(varianteSeleccionada)
+        atributos: obtenerAtributosVariante(varianteSeleccionada),
+        agregados: normalizarAgregadosVenta(item.agregados)
       });
     }
 

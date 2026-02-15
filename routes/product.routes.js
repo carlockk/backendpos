@@ -135,7 +135,13 @@ const proyectarProductoLocal = (productoLocal) => {
     agregados: Array.isArray(productoLocal.agregados)
       ? productoLocal.agregados.map((agg) => {
           if (agg && typeof agg === 'object' && agg._id) {
-            return { _id: agg._id, nombre: agg.nombre, grupo: agg.grupo || null };
+            return {
+              _id: agg._id,
+              nombre: agg.nombre,
+              precio: typeof agg.precio === 'number' ? agg.precio : null,
+              activo: agg.activo !== false,
+              grupo: agg.grupo || null
+            };
           }
           return agg;
         })
@@ -263,7 +269,11 @@ router.get('/', async (_req, res) => {
         path: 'productoBase',
         populate: { path: 'categoria', select: 'nombre parent' }
       })
-      .populate({ path: 'agregados', select: 'nombre grupo', populate: { path: 'grupo', select: 'titulo' } })
+      .populate({
+        path: 'agregados',
+        select: 'nombre precio activo grupo',
+        populate: { path: 'grupo', select: 'titulo' }
+      })
       .sort({ creado_en: -1 });
 
     return res.json(locales.map(proyectarProductoLocal));
@@ -280,7 +290,11 @@ router.get('/:id', async (req, res) => {
     }).populate({
       path: 'productoBase',
       populate: { path: 'categoria', select: 'nombre parent' }
-    }).populate({ path: 'agregados', select: 'nombre grupo', populate: { path: 'grupo', select: 'titulo' } });
+    }).populate({
+      path: 'agregados',
+      select: 'nombre precio activo grupo',
+      populate: { path: 'grupo', select: 'titulo' }
+    });
     if (productoLocal) {
       return res.json(proyectarProductoLocal(productoLocal));
     }
@@ -379,7 +393,11 @@ router.post('/', upload.single('imagen'), async (req, res) => {
     const poblado = await localGuardado.populate({
       path: 'productoBase',
       populate: { path: 'categoria', select: 'nombre parent' }
-    }).populate({ path: 'agregados', select: 'nombre grupo', populate: { path: 'grupo', select: 'titulo' } });
+    }).populate({
+      path: 'agregados',
+      select: 'nombre precio activo grupo',
+      populate: { path: 'grupo', select: 'titulo' }
+    });
 
     res.status(201).json(proyectarProductoLocal(poblado));
   } catch (err) {
@@ -494,7 +512,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         },
         {
           path: 'agregados',
-          select: 'nombre grupo',
+          select: 'nombre precio activo grupo',
           populate: { path: 'grupo', select: 'titulo' }
         }
       ]);

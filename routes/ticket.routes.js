@@ -11,6 +11,22 @@ const router = express.Router();
 router.use(adjuntarScopeLocal);
 router.use(requiereLocal);
 
+const normalizarAgregadosTicket = (raw) => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((agg) => {
+      const nombre = sanitizeOptionalText(agg?.nombre, { max: 80 }) || '';
+      if (!nombre) return null;
+      const precio = Number(agg?.precio);
+      return {
+        agregadoId: agg?.agregadoId || null,
+        nombre,
+        precio: Number.isFinite(precio) && precio > 0 ? precio : 0
+      };
+    })
+    .filter(Boolean);
+};
+
 /**
  * @swagger
  * tags:
@@ -84,7 +100,8 @@ router.post('/', async (req, res) => {
       productoBaseId: item?.productoBaseId || null,
       nombre: sanitizeOptionalText(item?.nombre, { max: 120 }) || '',
       observacion: sanitizeOptionalText(item?.observacion, { max: 120 }) || '',
-      varianteNombre: sanitizeOptionalText(item?.varianteNombre, { max: 80 }) || ''
+      varianteNombre: sanitizeOptionalText(item?.varianteNombre, { max: 80 }) || '',
+      agregados: normalizarAgregadosTicket(item?.agregados)
     }));
 
     const nuevo = new Ticket({
