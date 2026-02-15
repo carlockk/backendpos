@@ -450,16 +450,6 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         sku: v.sku
       }));
       const stockCalculado = calcularStockTotal(variantes, stockBase);
-      const filtroAgregados = {
-        local: req.localId,
-        activo: true,
-        $or: [{ _id: { $in: agregadosRaw } }]
-      };
-      if (categoriaId) {
-        filtroAgregados.$or.push({ categorias: categoriaId });
-      }
-      const agregadosValidos = await Agregado.find(filtroAgregados, '_id').lean();
-
       const categoriaId = normalizeCategoriaId(req.body.categoria);
       if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
         throw new Error('La categoria es invalida');
@@ -470,6 +460,16 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
           throw new Error('La categoria es invalida');
         }
       }
+
+      const filtroAgregados = {
+        local: req.localId,
+        activo: true,
+        $or: [{ _id: { $in: agregadosRaw } }]
+      };
+      if (categoriaId) {
+        filtroAgregados.$or.push({ categorias: categoriaId });
+      }
+      const agregadosValidos = await Agregado.find(filtroAgregados, '_id').lean();
 
       if (productoLocal.productoBase) {
         productoLocal.productoBase.nombre = nombre;
