@@ -299,6 +299,26 @@ router.patch("/local/pedidos/:id/estado", adjuntarScopeLocal, requiereLocal, asy
   }
 });
 
+// Consulta publica por id de pedido (usado por historial local sin login)
+router.get("/public/:id", async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: "ID de pedido invalido" });
+    }
+
+    const venta = await VentaCliente.findById(req.params.id).select(
+      "_id numero_pedido estado_pedido estado status fecha total tipo_pago local cliente_nombre cliente_telefono productos"
+    );
+
+    if (!venta) {
+      return res.status(404).json({ error: "Pedido no encontrado" });
+    }
+
+    res.json(venta);
+  } catch (error) {
+    res.status(500).json({ msg: "Error al obtener pedido", error });
+  }
+});
 // Detalle de venta para cliente autenticado
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
@@ -311,3 +331,4 @@ router.get("/:id", authMiddleware, async (req, res) => {
 });
 
 module.exports = router;
+
