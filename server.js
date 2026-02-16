@@ -12,7 +12,15 @@ const PORT = process.env.PORT || 5000;
 
 // 🛡️ Middleware
 app.use(cors({ origin: "*", credentials: true }));
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      if (req.originalUrl === "/api/pagos/webhook") {
+        req.rawBody = buf.toString();
+      }
+    },
+  })
+);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // 🏠 Ruta raíz (para que no salga "Cannot GET /")
