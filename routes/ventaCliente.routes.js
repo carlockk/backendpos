@@ -1,7 +1,9 @@
 const express = require("express");
 const mongoose = require("mongoose");
+const jwt = require("jsonwebtoken");
 const router = express.Router();
 const VentaCliente = require("../models/ventaCliente.model");
+const PedidoEstadoConfig = require("../models/pedidoEstadoConfig.model");
 const authMiddleware = require("../middlewares/auth");
 const Cliente = require("../models/Cliente");
 const {
@@ -13,7 +15,8 @@ const {
 } = require("../utils/input");
 const { adjuntarScopeLocal, requiereLocal } = require("../middlewares/localScope");
 
-const ESTADOS_PEDIDO_VALIDOS = [
+const JWT_SECRET = process.env.JWT_SECRET || "secreto_dev";
+const DEFAULT_ESTADOS_PEDIDO = [
   "pendiente",
   "aceptado",
   "preparando",
@@ -22,6 +25,37 @@ const ESTADOS_PEDIDO_VALIDOS = [
   "rechazado",
   "cancelado"
 ];
+
+const obtenerClienteIdDesdeToken = (req) => {
+  try {
+    const authHeader = req.headers.authorization || "";
+    if (!authHeader.startsWith("Bearer ")) return null;
+    const token = authHeader.replace("Bearer ", "").trim();
+    if (!token) return null;
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded?.id || null;
+  } catch {
+    return null;
+  }
+};
+
+const obtenerConfigEstados = async (localId) => {
+  let config = await PedidoEstadoConfig.findOne({ local: localId });
+  if (!config) {
+    config = await PedidoEstadoConfig.create({
+      local: localId,
+      estados: DEFAULT_ESTADOS_PEDIDO
+    });
+    return config;
+  }
+
+  if (!Array.isArray(config.estados) || config.estados.length === 0) {
+    config.estados = DEFAULT_ESTADOS_PEDIDO;
+    await config.save();
+  }
+
+  return config;
+};
 
 const normalizarAgregados = (raw) => {
   if (!Array.isArray(raw)) return [];
@@ -50,23 +84,8 @@ const normalizarProductos = (raw) => {
   }));
 };
 
-/**
- * @swagger
- * tags:
- *   name: VentasCliente
- *   description: Ventas realizadas por los clientes autenticados
- */
-
-/**
- * @swagger
- * /ventasCliente:
- *   post:
- *     summary: Registrar una nueva venta desde el cliente
- *     tags: [VentasCliente]
- *     security:
- *       - bearerAuth: []
- */
-router.post("/", authMiddleware, async (req, res) => {
+// Registrar pedido web (cliente logueado o invitado)
+router.post("/", async (req, res) => {
   try {
     const last = await VentaCliente.findOne().sort({ numero_pedido: -1 });
     const numero_pedido = last ? last.numero_pedido + 1 : 1;
@@ -82,11 +101,26 @@ router.post("/", authMiddleware, async (req, res) => {
       return res.status(400).json({ msg: "Datos incompletos" });
     }
 
-    const cliente = await Cliente.findById(req.clienteId);
-    let localId = cliente?.local || null;
+    const clienteId = obtenerClienteIdDesdeToken(req);
+    const cliente = clienteId ? await Cliente.findById(clienteId) : null;
+
+    let localId = null;
     if (req.body.local && mongoose.Types.ObjectId.isValid(req.body.local)) {
       localId = req.body.local;
+    } else if (cliente?.local) {
+      localId = cliente.local;
     }
+
+    if (!localId) {
+      return res.status(400).json({ msg: "Debes seleccionar un local" });
+    }
+
+    const emailClienteModel = normalizeEmail(cliente?.email || "");
+    const emailFinal = isValidEmail(emailNormalizado)
+      ? emailNormalizado
+      : isValidEmail(emailClienteModel)
+      ? emailClienteModel
+      : "sin_correo";
 
     const nuevaVenta = new VentaCliente({
       numero_pedido,
@@ -103,29 +137,22 @@ router.post("/", authMiddleware, async (req, res) => {
           fecha: new Date()
         }
       ],
-      cliente_id: req.clienteId,
-      cliente_email: isValidEmail(emailNormalizado) ? emailNormalizado : "sin_correo",
+      cliente_id: clienteId || null,
+      cliente_email: emailFinal,
       cliente_nombre: clienteNombre,
       cliente_telefono: clienteTelefono,
       local: localId
     });
 
     const ventaGuardada = await nuevaVenta.save();
+    await obtenerConfigEstados(localId);
     res.status(201).json(ventaGuardada);
   } catch (error) {
     res.status(500).json({ msg: "Error al registrar venta", error });
   }
 });
 
-/**
- * @swagger
- * /ventasCliente:
- *   get:
- *     summary: Obtener historial de compras del cliente autenticado
- *     tags: [VentasCliente]
- *     security:
- *       - bearerAuth: []
- */
+// Historial de compras del cliente autenticado
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const historial = await VentaCliente.find({ cliente_id: req.clienteId }).sort({ fecha: -1 });
@@ -149,6 +176,46 @@ router.get("/local/pedidos", adjuntarScopeLocal, requiereLocal, async (req, res)
   }
 });
 
+// Uso POS: estados configurados para pedidos web del local
+router.get("/local/estados", adjuntarScopeLocal, requiereLocal, async (req, res) => {
+  try {
+    const config = await obtenerConfigEstados(req.localId);
+    res.json({ estados: config.estados });
+  } catch (error) {
+    res.status(500).json({ msg: "Error al obtener estados de pedido", error });
+  }
+});
+
+// Uso POS: crear estado de pedido web (solo admin/superadmin)
+router.post("/local/estados", adjuntarScopeLocal, requiereLocal, async (req, res) => {
+  try {
+    if (!["admin", "superadmin"].includes(req.userRole)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    const estadoRaw = sanitizeText(req.body?.estado, { max: 30 });
+    const estado = estadoRaw ? estadoRaw.toLowerCase() : "";
+
+    if (!estado) {
+      return res.status(400).json({ error: "Estado invalido" });
+    }
+
+    const config = await obtenerConfigEstados(req.localId);
+    const yaExiste = config.estados.some((item) => String(item).toLowerCase() === estado);
+
+    if (yaExiste) {
+      return res.status(409).json({ error: "El estado ya existe", estados: config.estados });
+    }
+
+    config.estados.push(estado);
+    await config.save();
+
+    res.status(201).json({ estados: config.estados });
+  } catch (error) {
+    res.status(500).json({ msg: "Error al crear estado de pedido", error });
+  }
+});
+
 // Uso POS: cambiar estado de pedido web
 router.patch("/local/pedidos/:id/estado", adjuntarScopeLocal, requiereLocal, async (req, res) => {
   try {
@@ -156,11 +223,18 @@ router.patch("/local/pedidos/:id/estado", adjuntarScopeLocal, requiereLocal, asy
       return res.status(403).json({ error: "No autorizado" });
     }
 
-    const estado = sanitizeText(req.body?.estado, { max: 30 });
+    const estadoRaw = sanitizeText(req.body?.estado, { max: 30 });
+    const estado = estadoRaw ? estadoRaw.toLowerCase() : "";
     const nota = sanitizeOptionalText(req.body?.nota, { max: 160 }) || "";
 
-    if (!estado || !ESTADOS_PEDIDO_VALIDOS.includes(estado)) {
+    if (!estado) {
       return res.status(400).json({ error: "Estado de pedido invalido" });
+    }
+
+    const config = await obtenerConfigEstados(req.localId);
+    const estadoPermitido = config.estados.some((item) => String(item).toLowerCase() === estado);
+    if (!estadoPermitido) {
+      return res.status(400).json({ error: "Estado no configurado para este local" });
     }
 
     const venta = await VentaCliente.findOne({ _id: req.params.id, local: req.localId });
@@ -185,15 +259,7 @@ router.patch("/local/pedidos/:id/estado", adjuntarScopeLocal, requiereLocal, asy
   }
 });
 
-/**
- * @swagger
- * /ventasCliente/{id}:
- *   get:
- *     summary: Obtener detalle de una venta específica del cliente
- *     tags: [VentasCliente]
- *     security:
- *       - bearerAuth: []
- */
+// Detalle de venta para cliente autenticado
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
     const venta = await VentaCliente.findOne({ _id: req.params.id, cliente_id: req.clienteId });
