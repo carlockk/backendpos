@@ -162,6 +162,24 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
+// Eliminar pedido propio (cliente autenticado)
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const eliminado = await VentaCliente.findOneAndDelete({
+      _id: req.params.id,
+      cliente_id: req.clienteId
+    });
+
+    if (!eliminado) {
+      return res.status(404).json({ error: "Pedido no encontrado" });
+    }
+
+    res.json({ ok: true, id: eliminado._id });
+  } catch (error) {
+    res.status(500).json({ msg: "Error al eliminar pedido", error });
+  }
+});
+
 // Uso POS: listar pedidos web por local
 router.get("/local/pedidos", adjuntarScopeLocal, requiereLocal, async (req, res) => {
   try {
@@ -173,6 +191,28 @@ router.get("/local/pedidos", adjuntarScopeLocal, requiereLocal, async (req, res)
     res.json(pedidos);
   } catch (error) {
     res.status(500).json({ msg: "Error al obtener pedidos del local", error });
+  }
+});
+
+// Uso POS: eliminar pedido web por local (solo admin/superadmin)
+router.delete("/local/pedidos/:id", adjuntarScopeLocal, requiereLocal, async (req, res) => {
+  try {
+    if (!["admin", "superadmin"].includes(req.userRole)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    const eliminado = await VentaCliente.findOneAndDelete({
+      _id: req.params.id,
+      local: req.localId
+    });
+
+    if (!eliminado) {
+      return res.status(404).json({ error: "Pedido no encontrado" });
+    }
+
+    res.json({ ok: true, id: eliminado._id });
+  } catch (error) {
+    res.status(500).json({ msg: "Error al eliminar pedido", error });
   }
 });
 
