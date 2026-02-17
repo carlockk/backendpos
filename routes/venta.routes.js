@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const Venta = require('../models/venta.model.js');
+const VentaCliente = require('../models/ventaCliente.model.js');
 const ProductoLocal = require('../models/productLocal.model.js');
 const Caja = require('../models/caja.model.js');
 const { sanitizeText, sanitizeOptionalText } = require('../utils/input');
@@ -37,6 +38,11 @@ const normalizarAgregadosVenta = (raw) => {
 
 const calcularStockDesdeVariantes = (variantes = []) =>
   variantes.reduce((acc, variante) => acc + (variante.stock || 0), 0);
+
+const consolidarVentas = (ventasPos = [], ventasWeb = []) => ([
+  ...ventasPos.map((venta) => ({ ...venta.toObject(), canal: 'POS' })),
+  ...ventasWeb.map((venta) => ({ ...venta.toObject(), canal: 'WEB' }))
+]);
 
 const armarDesglosePorTipoProducto = async (ventas = [], localId) => {
   const ids = new Set();
@@ -104,6 +110,23 @@ const armarResumenPorProducto = (ventas = []) => {
   });
 
   return [...porProducto.values()].sort((a, b) => b.total - a.total);
+};
+
+const armarDesglosePorTipoPago = (ventas = []) => {
+  const porTipoPago = {};
+  const porTipoPagoDetallado = { POS: {}, WEB: {} };
+
+  ventas.forEach((venta) => {
+    const tipoPago = venta.tipo_pago || 'Otro';
+    const total = Number(venta.total) || 0;
+    const canal = venta.canal === 'WEB' ? 'WEB' : 'POS';
+    const llaveConCanal = `${tipoPago} (${canal})`;
+
+    porTipoPago[llaveConCanal] = (porTipoPago[llaveConCanal] || 0) + total;
+    porTipoPagoDetallado[canal][tipoPago] = (porTipoPagoDetallado[canal][tipoPago] || 0) + total;
+  });
+
+  return { porTipoPago, porTipoPagoDetallado };
 };
 
 /**
@@ -205,22 +228,41 @@ router.get('/resumen', async (req, res) => {
       filtro.usuario = req.userId;
     }
 
-    const ventas = await Venta.find(filtro);
+    const filtroWeb = {
+      fecha: { $gte: inicio, $lte: fin },
+      local: req.localId,
+      estado_pedido: /^entregado$/i
+    };
 
-    const total = ventas.reduce((acc, v) => acc + v.total, 0);
-    const cantidad = ventas.length;
+    const [ventasPos, ventasWeb] = await Promise.all([
+      Venta.find(filtro),
+      VentaCliente.find(filtroWeb)
+    ]);
+    const ventasConsolidadas = consolidarVentas(ventasPos, ventasWeb);
 
-    const porTipoPago = {};
-    ventas.forEach(v => {
-      const tipoPago = v.tipo_pago || 'Otro';
-      porTipoPago[tipoPago] = (porTipoPago[tipoPago] || 0) + v.total;
+    const totalPos = ventasPos.reduce((acc, v) => acc + (Number(v.total) || 0), 0);
+    const totalWeb = ventasWeb.reduce((acc, v) => acc + (Number(v.total) || 0), 0);
+    const total = totalPos + totalWeb;
+    const cantidadPos = ventasPos.length;
+    const cantidadWeb = ventasWeb.length;
+    const cantidad = cantidadPos + cantidadWeb;
+
+    const { porTipoPago, porTipoPagoDetallado } = armarDesglosePorTipoPago(ventasConsolidadas);
+    const porTipoProducto = await armarDesglosePorTipoProducto(ventasConsolidadas, req.localId);
+    const porProducto = armarResumenPorProducto(ventasConsolidadas);
+
+    res.json({
+      total,
+      cantidad,
+      porTipoPago,
+      porTipoPagoDetallado,
+      porTipoProducto,
+      porProducto,
+      totalesPorCanal: {
+        POS: { total: totalPos, cantidad: cantidadPos },
+        WEB: { total: totalWeb, cantidad: cantidadWeb }
+      }
     });
-
-    const porTipoProducto = await armarDesglosePorTipoProducto(ventas, req.localId);
-
-    const porProducto = armarResumenPorProducto(ventas);
-
-    res.json({ total, cantidad, porTipoPago, porTipoProducto, porProducto });
   } catch (err) {
     console.error('Error al obtener resumen:', err);
     res.status(500).json({ error: 'Error interno del servidor' });
@@ -276,22 +318,41 @@ router.get('/resumen-rango', async (req, res) => {
       filtro.usuario = req.userId;
     }
 
-    const ventas = await Venta.find(filtro);
+    const filtroWeb = {
+      fecha: { $gte: fechaInicio, $lte: fechaFin },
+      local: req.localId,
+      estado_pedido: /^entregado$/i
+    };
 
-    const total = ventas.reduce((acc, v) => acc + v.total, 0);
-    const cantidad = ventas.length;
+    const [ventasPos, ventasWeb] = await Promise.all([
+      Venta.find(filtro),
+      VentaCliente.find(filtroWeb)
+    ]);
+    const ventasConsolidadas = consolidarVentas(ventasPos, ventasWeb);
 
-    const porTipoPago = {};
-    ventas.forEach(v => {
-      const tipoPago = v.tipo_pago || 'Otro';
-      porTipoPago[tipoPago] = (porTipoPago[tipoPago] || 0) + v.total;
+    const totalPos = ventasPos.reduce((acc, v) => acc + (Number(v.total) || 0), 0);
+    const totalWeb = ventasWeb.reduce((acc, v) => acc + (Number(v.total) || 0), 0);
+    const total = totalPos + totalWeb;
+    const cantidadPos = ventasPos.length;
+    const cantidadWeb = ventasWeb.length;
+    const cantidad = cantidadPos + cantidadWeb;
+
+    const { porTipoPago, porTipoPagoDetallado } = armarDesglosePorTipoPago(ventasConsolidadas);
+    const porTipoProducto = await armarDesglosePorTipoProducto(ventasConsolidadas, req.localId);
+    const porProducto = armarResumenPorProducto(ventasConsolidadas);
+
+    res.json({
+      total,
+      cantidad,
+      porTipoPago,
+      porTipoPagoDetallado,
+      porTipoProducto,
+      porProducto,
+      totalesPorCanal: {
+        POS: { total: totalPos, cantidad: cantidadPos },
+        WEB: { total: totalWeb, cantidad: cantidadWeb }
+      }
     });
-
-    const porTipoProducto = await armarDesglosePorTipoProducto(ventas, req.localId);
-
-    const porProducto = armarResumenPorProducto(ventas);
-
-    res.json({ total, cantidad, porTipoPago, porTipoProducto, porProducto });
   } catch (err) {
     console.error('Error al obtener resumen por rango:', err);
     res.status(500).json({ error: 'Error interno del servidor' });
