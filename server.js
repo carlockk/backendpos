@@ -54,6 +54,7 @@ const insumoCategoriaRoutes = require("./routes/insumoCategoria.routes");
 const localesRoutes = require("./routes/locales.routes");
 const reciboConfigRoutes = require("./routes/reciboConfig.routes");
 const agregadoRoutes = require("./routes/agregado.routes");
+const socialConfigRoutes = require("./routes/socialConfig.routes");
 
 // Swagger
 const { swaggerUi, specs } = require("./swagger");
@@ -75,6 +76,7 @@ app.use("/api/insumo-categorias", insumoCategoriaRoutes);
 app.use("/api/locales", localesRoutes);
 app.use("/api/recibo-config", reciboConfigRoutes);
 app.use("/api/agregados", agregadoRoutes);
+app.use("/api/social-config", socialConfigRoutes);
 
 // 🔌 Levantar servidor primero para evitar timeout en Render
 app.listen(PORT, "0.0.0.0", () => {
