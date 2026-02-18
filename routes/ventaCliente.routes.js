@@ -256,6 +256,94 @@ router.post("/local/estados", adjuntarScopeLocal, requiereLocal, async (req, res
   }
 });
 
+// Uso POS: editar estado de pedido web (solo admin/superadmin)
+router.put("/local/estados/:estado", adjuntarScopeLocal, requiereLocal, async (req, res) => {
+  try {
+    if (!["admin", "superadmin"].includes(req.userRole)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    const estadoActualRaw = sanitizeText(req.params?.estado, { max: 30 });
+    const estadoNuevoRaw = sanitizeText(req.body?.estado || req.body?.nuevoEstado, { max: 30 });
+    const estadoActual = estadoActualRaw ? estadoActualRaw.toLowerCase() : "";
+    const estadoNuevo = estadoNuevoRaw ? estadoNuevoRaw.toLowerCase() : "";
+
+    if (!estadoActual || !estadoNuevo) {
+      return res.status(400).json({ error: "Estado invalido" });
+    }
+
+    const config = await obtenerConfigEstados(req.localId);
+    const index = config.estados.findIndex((item) => String(item).toLowerCase() === estadoActual);
+    if (index === -1) {
+      return res.status(404).json({ error: "Estado no encontrado" });
+    }
+
+    const duplicado = config.estados.some(
+      (item, idx) => idx !== index && String(item).toLowerCase() === estadoNuevo
+    );
+    if (duplicado) {
+      return res.status(409).json({ error: "El estado ya existe" });
+    }
+
+    config.estados[index] = estadoNuevo;
+    await config.save();
+
+    if (estadoActual !== estadoNuevo) {
+      await VentaCliente.updateMany(
+        { local: req.localId, estado_pedido: estadoActual },
+        { $set: { estado_pedido: estadoNuevo } }
+      );
+    }
+
+    res.json({ estados: config.estados });
+  } catch (error) {
+    res.status(500).json({ msg: "Error al editar estado de pedido", error });
+  }
+});
+
+// Uso POS: eliminar estado de pedido web (solo admin/superadmin)
+router.delete("/local/estados/:estado", adjuntarScopeLocal, requiereLocal, async (req, res) => {
+  try {
+    if (!["admin", "superadmin"].includes(req.userRole)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    const estadoRaw = sanitizeText(req.params?.estado, { max: 30 });
+    const estado = estadoRaw ? estadoRaw.toLowerCase() : "";
+    if (!estado) {
+      return res.status(400).json({ error: "Estado invalido" });
+    }
+
+    const config = await obtenerConfigEstados(req.localId);
+    const existe = config.estados.some((item) => String(item).toLowerCase() === estado);
+    if (!existe) {
+      return res.status(404).json({ error: "Estado no encontrado" });
+    }
+
+    const pedidosUsandoEstado = await VentaCliente.countDocuments({
+      local: req.localId,
+      estado_pedido: estado
+    });
+    if (pedidosUsandoEstado > 0) {
+      return res.status(409).json({
+        error: "No puedes eliminar un estado que esta en uso por pedidos"
+      });
+    }
+
+    const siguiente = config.estados.filter((item) => String(item).toLowerCase() !== estado);
+    if (siguiente.length === 0) {
+      return res.status(400).json({ error: "Debe existir al menos un estado" });
+    }
+
+    config.estados = siguiente;
+    await config.save();
+
+    res.json({ estados: config.estados });
+  } catch (error) {
+    res.status(500).json({ msg: "Error al eliminar estado de pedido", error });
+  }
+});
+
 // Uso POS: cambiar estado de pedido web
 router.patch("/local/pedidos/:id/estado", adjuntarScopeLocal, requiereLocal, async (req, res) => {
   try {
