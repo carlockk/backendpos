@@ -7,7 +7,7 @@ const { sanitizeText, normalizeEmail, isValidEmail } = require('../utils/input')
 const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
-const ROLES_VALIDOS = new Set(['superadmin', 'admin', 'cajero']);
+const ROLES_VALIDOS = new Set(['superadmin', 'admin', 'cajero', 'mesero']);
 
 router.use(adjuntarScopeLocal);
 
