@@ -164,7 +164,9 @@ router.get('/', async (req, res) => {
       filtro.usuario = req.userId;
     }
 
-    const ventas = await Venta.find(filtro).sort({ fecha: -1 });
+    const ventas = await Venta.find(filtro)
+      .populate('usuario', 'nombre email rol')
+      .sort({ fecha: -1 });
     res.json(ventas);
   } catch (err) {
     console.error('Error al obtener historial:', err);

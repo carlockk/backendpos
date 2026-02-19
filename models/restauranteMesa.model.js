@@ -32,6 +32,15 @@ const restauranteMesaSchema = new mongoose.Schema(
       enum: ['libre', 'ocupada', 'reservada', 'inactiva'],
       default: 'libre'
     },
+    meseroAsignado: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Usuario',
+      default: null
+    },
+    asignadaEn: {
+      type: Date,
+      default: null
+    },
     activa: {
       type: Boolean,
       default: true

@@ -55,7 +55,7 @@ const restauranteComandaSchema = new mongoose.Schema(
     },
     estado: {
       type: String,
-      enum: ['abierta', 'en_preparacion', 'lista', 'entregada', 'cerrada', 'cancelada'],
+      enum: ['abierta', 'en_preparacion', 'lista', 'entregada', 'lista_para_cobro', 'cerrada', 'cancelada'],
       default: 'abierta'
     },
     observacion: {
@@ -83,6 +83,41 @@ const restauranteComandaSchema = new mongoose.Schema(
     },
     cerradaEn: {
       type: Date,
+      default: null
+    },
+    cobradaEn: {
+      type: Date,
+      default: null
+    },
+    cobradaPor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Usuario',
+      default: null
+    },
+    tipo_pago: {
+      type: String,
+      default: ''
+    },
+    tipo_pedido: {
+      type: String,
+      default: ''
+    },
+    origen_cobro: {
+      type: String,
+      enum: ['caja', 'mesa'],
+      default: null
+    },
+    rendicion_efectivo_pendiente: {
+      type: Boolean,
+      default: false
+    },
+    rendidoEn: {
+      type: Date,
+      default: null
+    },
+    ventaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Venta',
       default: null
     }
   },

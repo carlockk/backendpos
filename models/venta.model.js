@@ -29,6 +29,11 @@ const ventaSchema = new mongoose.Schema({
   total: Number,
   tipo_pago: String,
   tipo_pedido: String,
+  origen_cobro: { type: String, default: 'pos' },
+  mesa_numero: { type: Number, default: null },
+  cobrador_nombre: { type: String, default: '' },
+  rendicion_efectivo_pendiente: { type: Boolean, default: false },
+  rendido_en: { type: Date, default: null },
   usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', default: null },
   local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', default: null },
   fecha: {
