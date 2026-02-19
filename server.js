@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const path = require("path");
+const { restringirMesero } = require("./middlewares/roleAccess");
 
 // Cargar variables de entorno
 dotenv.config();
@@ -22,6 +23,7 @@ app.use(
   })
 );
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(restringirMesero);
 
 // 🏠 Ruta raíz (para que no salga "Cannot GET /")
 app.get("/", (req, res) => {

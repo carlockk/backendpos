@@ -67,6 +67,25 @@ const normalizarItemsComanda = async (itemsRaw, localId) => {
   return items;
 };
 
+router.get('/productos', async (req, res) => {
+  try {
+    const productos = await ProductoLocal.find({ local: req.localId, activo: true })
+      .populate('productoBase', 'nombre')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const respuesta = productos.map((producto) => ({
+      _id: producto._id,
+      nombre: sanitizeText(producto?.productoBase?.nombre, { max: 120 }) || 'Producto',
+      precio: Number(producto?.precio) || 0
+    }));
+
+    res.json(respuesta);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener productos para restaurante' });
+  }
+});
+
 router.get('/mesas', async (req, res) => {
   try {
     const soloActivas = String(req.query.activas || 'true') !== 'false';
