@@ -18,15 +18,20 @@ const allowedOrigins = (process.env.CORS_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const allowLocalhostCors = String(process.env.CORS_ALLOW_LOCALHOST || "false").toLowerCase() === "true";
+const extraOrigins = allowLocalhostCors
+  ? ["http://localhost:5173", "http://127.0.0.1:5173"]
+  : [];
+const mergedOrigins = Array.from(new Set([...allowedOrigins, ...extraOrigins]));
 const isProduction = process.env.NODE_ENV === "production";
 
-if (isProduction && allowedOrigins.length === 0) {
+if (isProduction && mergedOrigins.length === 0) {
   throw new Error("CORS_ORIGINS es obligatorio en produccion");
 }
 
-const corsOrigin = allowedOrigins.length
+const corsOrigin = mergedOrigins.length
   ? (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || mergedOrigins.includes(origin)) {
         return callback(null, true);
       }
       return callback(new Error("Origen no permitido por CORS"));

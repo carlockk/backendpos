@@ -1,20 +1,28 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
+const {
+  WebpayPlus,
+  Options,
+  IntegrationApiKeys,
+  IntegrationCommerceCodes,
+  Environment,
+} = require("transbank-sdk");
+
 const router = express.Router();
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const CheckoutSession = require("../models/checkoutSession.model");
 const VentaCliente = require("../models/ventaCliente.model");
 const Cliente = require("../models/Cliente");
+const { getJwtSecret } = require("../utils/jwtConfig");
 const {
   sanitizeText,
   sanitizeOptionalText,
   normalizeEmail,
   isValidEmail,
-  toNumberOrNull
+  toNumberOrNull,
 } = require("../utils/input");
 
-const JWT_SECRET = process.env.JWT_SECRET || "secreto_dev";
+const JWT_SECRET = getJwtSecret();
 
 const normalizarItems = (raw) => {
   if (!Array.isArray(raw)) return [];
@@ -43,11 +51,11 @@ const normalizarItems = (raw) => {
                 return {
                   agregadoId: mongoose.Types.ObjectId.isValid(agg?.agregadoId) ? agg.agregadoId : null,
                   nombre: aggNombre,
-                  precio: Number.isFinite(aggPrecio) && aggPrecio > 0 ? aggPrecio : 0
+                  precio: Number.isFinite(aggPrecio) && aggPrecio > 0 ? aggPrecio : 0,
                 };
               })
               .filter(Boolean)
-          : []
+          : [],
       };
     })
     .filter(Boolean);
@@ -66,11 +74,46 @@ const obtenerClienteIdDesdeToken = (req) => {
   }
 };
 
-const appendSessionId = (url = "") => {
-  if (!url) return "";
-  if (url.includes("{CHECKOUT_SESSION_ID}")) return url;
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}session_id={CHECKOUT_SESSION_ID}`;
+const generarBuyOrder = () => {
+  const random = Math.random().toString(36).slice(2, 7).toUpperCase();
+  return `ORD-${Date.now()}-${random}`.slice(0, 26);
+};
+
+const generarSessionId = (clienteId) => {
+  const base = String(clienteId || "anon").replace(/[^a-zA-Z0-9]/g, "").slice(0, 12) || "anon";
+  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `SES-${base}-${Date.now()}-${random}`.slice(0, 61);
+};
+
+const getTransbankTx = () => {
+  const env = String(process.env.TRANSBANK_ENVIRONMENT || "integration").toLowerCase();
+  const commerceCode = String(process.env.COMMERCE_CODE || process.env.TRANSBANK_COMMERCE_CODE || "").trim();
+  const apiKey = String(process.env.API_KEY || process.env.TRANSBANK_API_KEY || "").trim();
+
+  if (env === "production") {
+    if (!commerceCode || !apiKey) {
+      throw new Error("COMMERCE_CODE y API_KEY son obligatorios para Transbank en produccion");
+    }
+    return new WebpayPlus.Transaction(new Options(commerceCode, apiKey, Environment.Production));
+  }
+
+  return new WebpayPlus.Transaction(
+    new Options(IntegrationCommerceCodes.WEBPAY_PLUS, IntegrationApiKeys.WEBPAY, Environment.Integration)
+  );
+};
+
+const getReturnUrl = () => {
+  const url = String(process.env.TRANSBANK_RETURN_URL || process.env.CHECKOUT_RESULT_URL || "").trim();
+  if (!url) {
+    throw new Error("Debes configurar TRANSBANK_RETURN_URL (ruta del frontend para resultado de pago)");
+  }
+  return url;
+};
+
+const isPagoAutorizado = (result) => {
+  const status = String(result?.status || "").toUpperCase();
+  const responseCode = Number(result?.response_code);
+  return status === "AUTHORIZED" && responseCode === 0;
 };
 
 const crearVentaClienteDesdeCheckout = async (sessionId) => {
@@ -96,7 +139,7 @@ const crearVentaClienteDesdeCheckout = async (sessionId) => {
       varianteId: item.varianteId || null,
       varianteNombre: item.varianteNombre || "",
       agregados: Array.isArray(item.agregados) ? item.agregados : [],
-      observacion: `Pago online confirmado` 
+      observacion: "Pago online confirmado",
     };
   });
 
@@ -104,22 +147,22 @@ const crearVentaClienteDesdeCheckout = async (sessionId) => {
     numero_pedido,
     productos,
     total: pending.total,
-    tipo_pago: pending.tipo_pago || "online",
+    tipo_pago: pending.tipo_pago || "tarjeta_webpay",
     estado_pedido: "pendiente",
     historial_estados: [
       {
         estado: "pendiente",
-        nota: "Pedido web pagado en Stripe",
+        nota: "Pedido web pagado en Webpay",
         usuario_id: null,
         usuario_rol: "cliente",
-        fecha: new Date()
-      }
+        fecha: new Date(),
+      },
     ],
     local: pending.local,
     cliente_id: pending.cliente_id || null,
     cliente_email: pending.cliente_email || "sin_correo",
     cliente_nombre: pending.cliente_nombre || "",
-    cliente_telefono: pending.cliente_telefono || ""
+    cliente_telefono: pending.cliente_telefono || "",
   });
 
   pending.venta_cliente_id = venta._id;
@@ -152,8 +195,11 @@ router.post("/crear-sesion", async (req, res) => {
     }
 
     const total = items.reduce((sum, item) => sum + Number(item.precio || 0) * Number(item.cantidad || 1), 0);
-    const tipoPedido = sanitizeOptionalText(order?.tipo_pedido, { max: 30 }) || "tienda";
+    if (!Number.isFinite(total) || total <= 0) {
+      return res.status(400).json({ error: "Total invalido" });
+    }
 
+    const tipoPedido = sanitizeOptionalText(order?.tipo_pedido, { max: 30 }) || "tienda";
     const clienteId = obtenerClienteIdDesdeToken(req);
     const cliente = clienteId ? await Cliente.findById(clienteId) : null;
     const emailCliente = normalizeEmail(cliente?.email || "");
@@ -163,116 +209,113 @@ router.post("/crear-sesion", async (req, res) => {
       ? emailCliente
       : "sin_correo";
 
-    const successUrl = appendSessionId(process.env.STRIPE_SUCCESS_URL);
-    const cancelUrl = process.env.STRIPE_CANCEL_URL;
+    const tx = getTransbankTx();
+    const buyOrder = generarBuyOrder();
+    const sessionId = generarSessionId(clienteId);
+    const returnUrl = getReturnUrl();
+    const amount = Math.round(total);
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      mode: "payment",
-      line_items: items.map((item) => ({
-        price_data: {
-          currency: "clp",
-          product_data: {
-            name: item.nombre,
-          },
-          unit_amount: Math.round(Number(item.precio)),
-        },
-        quantity: item.cantidad,
-      })),
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      metadata: {
-        local: String(localId),
-        tipo_pedido: tipoPedido,
-        cliente_nombre: clienteNombre,
-        cliente_telefono: clienteTelefono,
-        cliente_email: emailFinal,
-        cliente_id: clienteId ? String(clienteId) : ""
-      },
-    });
+    const response = await tx.create(buyOrder, sessionId, amount, returnUrl);
 
     await CheckoutSession.create({
-      session_id: session.id,
+      session_id: String(response.token),
       local: localId,
       cliente_id: clienteId || null,
       cliente_email: emailFinal,
       cliente_nombre: clienteNombre,
       cliente_telefono: clienteTelefono,
       tipo_pedido: tipoPedido,
-      tipo_pago: "tarjeta_online",
-      total,
+      tipo_pago: "tarjeta_webpay",
+      total: amount,
       productos: items,
-      estado: "pendiente_pago"
+      estado: "pendiente_pago",
     });
 
-    res.json({ url: session.url, session_id: session.id });
+    return res.json({
+      url: response.url,
+      token: response.token,
+      buy_order: buyOrder,
+      session_id: sessionId,
+    });
   } catch (error) {
-    console.error("Error en Stripe:", error);
-    res.status(500).json({ error: "No se pudo crear sesion de pago" });
+    console.error("Error creando sesion Webpay:", error);
+    return res.status(500).json({ error: "No se pudo crear sesion de pago" });
   }
 });
 
 router.post("/confirmar-sesion", async (req, res) => {
   try {
-    const sessionId = sanitizeText(req.body?.session_id, { max: 120 });
-    if (!sessionId) {
-      return res.status(400).json({ error: "session_id requerido" });
+    const tokenWs = sanitizeText(
+      req.body?.token_ws || req.body?.token || req.query?.token_ws || req.query?.token,
+      { max: 180 }
+    );
+
+    if (!tokenWs) {
+      return res.status(400).json({ error: "token_ws requerido" });
     }
 
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    if (!session || session.payment_status !== "paid") {
-      return res.status(400).json({ error: "La sesion aun no esta pagada" });
+    const pending = await CheckoutSession.findOne({ session_id: tokenWs });
+    if (!pending) {
+      return res.status(404).json({ error: "No se encontro sesion pendiente" });
     }
 
-    const venta = await crearVentaClienteDesdeCheckout(sessionId);
+    if (pending.estado === "procesado" && pending.venta_cliente_id) {
+      const ventaExistente = await VentaCliente.findById(pending.venta_cliente_id);
+      if (ventaExistente) {
+        return res.json({
+          ok: true,
+          venta: {
+            _id: ventaExistente._id,
+            numero_pedido: ventaExistente.numero_pedido,
+            estado_pedido: ventaExistente.estado_pedido,
+            total: ventaExistente.total,
+            fecha: ventaExistente.fecha,
+            local: ventaExistente.local,
+          },
+        });
+      }
+    }
+
+    const tx = getTransbankTx();
+    const result = await tx.commit(tokenWs);
+
+    if (!isPagoAutorizado(result)) {
+      pending.estado = "rechazado";
+      await pending.save();
+      return res.status(400).json({
+        error: "La transaccion no fue aprobada",
+        detalle: {
+          status: result?.status || null,
+          response_code: result?.response_code ?? null,
+        },
+      });
+    }
+
+    const venta = await crearVentaClienteDesdeCheckout(tokenWs);
     if (!venta) {
       return res.status(404).json({ error: "No se encontro sesion pendiente" });
     }
 
-    res.json({
+    return res.json({
       ok: true,
+      transaccion: {
+        status: result?.status || null,
+        authorization_code: result?.authorization_code || null,
+        amount: result?.amount ?? null,
+        buy_order: result?.buy_order || null,
+      },
       venta: {
         _id: venta._id,
         numero_pedido: venta.numero_pedido,
         estado_pedido: venta.estado_pedido,
         total: venta.total,
         fecha: venta.fecha,
-        local: venta.local
-      }
+        local: venta.local,
+      },
     });
   } catch (error) {
-    res.status(500).json({ error: "No se pudo confirmar la sesion", detail: error?.message || "" });
-  }
-});
-
-router.post("/webhook", async (req, res) => {
-  try {
-    let event = req.body;
-
-    const signature = req.headers["stripe-signature"];
-    if (signature && process.env.STRIPE_WEBHOOK_SECRET && req.rawBody) {
-      event = stripe.webhooks.constructEvent(
-        Buffer.from(req.rawBody, "utf8"),
-        signature,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-    }
-
-    if (event?.type === "checkout.session.completed") {
-      const session = event.data?.object;
-      const sessionId = session?.id;
-      if (sessionId) {
-        await crearVentaClienteDesdeCheckout(sessionId);
-      }
-    }
-
-    return res.json({ received: true });
-  } catch (error) {
-    console.error("Webhook Stripe error:", error);
-    return res.status(400).json({ error: "Webhook error" });
+    return res.status(500).json({ error: "No se pudo confirmar la sesion", detail: error?.message || "" });
   }
 });
 
 module.exports = router;
-
-
