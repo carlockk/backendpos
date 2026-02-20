@@ -4,11 +4,51 @@ const { getAuthPayloadFromRequest } = require('../utils/authToken');
 const normalizarRol = (rol) =>
   typeof rol === 'string' ? rol.trim().toLowerCase() : '';
 
+const esGetCatalogoPublico = (req) => {
+  const method = String(req.method || '').toUpperCase();
+  if (method !== 'GET') return false;
+
+  const baseUrl = String(req.baseUrl || '');
+  const path = String(req.path || '');
+
+  if (baseUrl === '/api/productos') {
+    if (path === '/') return true;
+    const id = path.startsWith('/') ? path.slice(1) : path;
+    return mongoose.Types.ObjectId.isValid(id);
+  }
+
+  if (baseUrl === '/api/categorias') {
+    if (path === '/') return true;
+    const id = path.startsWith('/') ? path.slice(1) : path;
+    return mongoose.Types.ObjectId.isValid(id);
+  }
+
+  if (baseUrl === '/api/agregados') {
+    return path === '/opciones';
+  }
+
+  return false;
+};
+
 const adjuntarScopeLocal = (req, res, next) => {
   const payload = req.auth || getAuthPayloadFromRequest(req);
   const allowLegacyHeaders = process.env.ALLOW_LEGACY_SCOPE_HEADERS === 'true';
+  const allowPublicCatalog = process.env.ALLOW_PUBLIC_CATALOG !== 'false';
 
   if (!payload && !allowLegacyHeaders) {
+    if (allowPublicCatalog && esGetCatalogoPublico(req)) {
+      const localRaw = req.headers['x-local-id'];
+      if (!localRaw || String(localRaw).trim() === '') {
+        return res.status(400).json({ error: 'Local requerido' });
+      }
+      if (!mongoose.Types.ObjectId.isValid(localRaw)) {
+        return res.status(400).json({ error: 'Local invalido' });
+      }
+      req.userRole = 'public';
+      req.localId = String(localRaw);
+      req.userId = null;
+      return next();
+    }
     return res.status(401).json({ error: 'No autenticado' });
   }
 
