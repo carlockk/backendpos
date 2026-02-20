@@ -1,8 +1,18 @@
 const normalizarRol = (rol) =>
   typeof rol === 'string' ? rol.trim().toLowerCase() : '';
+const { getAuthPayloadFromRequest } = require('../utils/authToken');
 
 const restringirMesero = (req, res, next) => {
-  const rol = normalizarRol(req.headers['x-user-role']);
+  const payload = getAuthPayloadFromRequest(req);
+  if (payload) {
+    req.auth = payload;
+  }
+
+  const allowLegacyHeaders = process.env.ALLOW_LEGACY_SCOPE_HEADERS === 'true';
+  const rol = payload
+    ? normalizarRol(payload.rol)
+    : (allowLegacyHeaders ? normalizarRol(req.headers['x-user-role']) : '');
+
   if (rol !== 'mesero') {
     return next();
   }

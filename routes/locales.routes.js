@@ -1,8 +1,18 @@
 const express = require('express');
 const Local = require('../models/local.model');
 const { sanitizeText, sanitizeOptionalText, normalizeEmail, isValidEmail } = require('../utils/input');
+const { adjuntarScopeLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
+router.use(adjuntarScopeLocal);
+
+const esAdmin = (rol) => rol === 'admin' || rol === 'superadmin';
+const requireAdmin = (req, res, next) => {
+  if (!esAdmin(req.userRole)) {
+    return res.status(403).json({ error: 'No tienes permisos para esta accion' });
+  }
+  return next();
+};
 
 const construirPayload = (data) => {
   const nombre = sanitizeText(data.nombre, { max: 80 });
@@ -16,7 +26,13 @@ const construirPayload = (data) => {
 
 router.get('/', async (_req, res) => {
   try {
-    const locales = await Local.find().sort({ nombre: 1 });
+    if (esAdmin(_req.userRole)) {
+      const locales = await Local.find().sort({ nombre: 1 });
+      return res.json(locales);
+    }
+    const locales = _req.localId
+      ? await Local.find({ _id: _req.localId }).sort({ nombre: 1 })
+      : [];
     res.json(locales);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener locales' });
@@ -25,6 +41,12 @@ router.get('/', async (_req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
+    if (
+      req.userRole !== 'superadmin' &&
+      (!req.localId || String(req.localId) !== String(req.params.id))
+    ) {
+      return res.status(403).json({ error: 'No puedes ver otro local' });
+    }
     const local = await Local.findById(req.params.id);
     if (!local) return res.status(404).json({ error: 'Local no encontrado' });
     res.json(local);
@@ -33,7 +55,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireAdmin, async (req, res) => {
   try {
     const payload = construirPayload(req.body);
     if (!payload.nombre) {
@@ -63,8 +85,11 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAdmin, async (req, res) => {
   try {
+    if (req.userRole !== 'superadmin' && String(req.localId || '') !== String(req.params.id)) {
+      return res.status(403).json({ error: 'No puedes editar otro local' });
+    }
     const payload = construirPayload(req.body);
     if (!payload.nombre) {
       return res.status(400).json({ error: 'Nombre requerido' });
@@ -96,8 +121,11 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   try {
+    if (req.userRole !== 'superadmin' && String(req.localId || '') !== String(req.params.id)) {
+      return res.status(403).json({ error: 'No puedes eliminar otro local' });
+    }
     const local = await Local.findById(req.params.id);
     if (!local) {
       return res.status(404).json({ error: 'Local no encontrado' });

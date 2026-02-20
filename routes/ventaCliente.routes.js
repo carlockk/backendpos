@@ -14,8 +14,9 @@ const {
   toNumberOrNull
 } = require("../utils/input");
 const { adjuntarScopeLocal, requiereLocal } = require("../middlewares/localScope");
+const { getJwtSecret } = require("../utils/jwtConfig");
 
-const JWT_SECRET = process.env.JWT_SECRET || "secreto_dev";
+const JWT_SECRET = getJwtSecret();
 const DEFAULT_ESTADOS_PEDIDO = [
   "pendiente",
   "aceptado",

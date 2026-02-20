@@ -4,15 +4,36 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const path = require("path");
 const { restringirMesero } = require("./middlewares/roleAccess");
+const { ensureJwtConfig } = require("./utils/jwtConfig");
 
 // Cargar variables de entorno
 dotenv.config();
+ensureJwtConfig();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // 🛡️ Middleware
-app.use(cors({ origin: "*", credentials: true }));
+const allowedOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const isProduction = process.env.NODE_ENV === "production";
+
+if (isProduction && allowedOrigins.length === 0) {
+  throw new Error("CORS_ORIGINS es obligatorio en produccion");
+}
+
+const corsOrigin = allowedOrigins.length
+  ? (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Origen no permitido por CORS"));
+    }
+  : true;
+
+app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(
   express.json({
     verify: (req, _res, buf) => {

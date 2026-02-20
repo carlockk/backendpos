@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Cliente = require('../models/Cliente');
+const { getJwtSecret } = require('../utils/jwtConfig');
 const {
   sanitizeText,
   sanitizeOptionalText,
@@ -11,7 +12,7 @@ const {
 } = require('../utils/input');
 const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mi_clave_secreta';
+const JWT_SECRET = getJwtSecret();
 router.use(adjuntarScopeLocal);
 
 /**
