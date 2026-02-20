@@ -27,6 +27,10 @@ const esGetCatalogoPublico = (req) => {
     return path === '/opciones';
   }
 
+  if (baseUrl === '/api/social-config') {
+    return path === '/public';
+  }
+
   return false;
 };
 
