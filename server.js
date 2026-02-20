@@ -14,13 +14,16 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // 🛡️ Middleware
+const normalizeOrigin = (value) =>
+  String(value || "").trim().replace(/\/+$/, "");
+
 const allowedOrigins = (process.env.CORS_ORIGINS || "")
   .split(",")
-  .map((origin) => origin.trim())
+  .map((origin) => normalizeOrigin(origin))
   .filter(Boolean);
 const allowLocalhostCors = String(process.env.CORS_ALLOW_LOCALHOST || "false").toLowerCase() === "true";
 const extraOrigins = allowLocalhostCors
-  ? ["http://localhost:5173", "http://127.0.0.1:5173"]
+  ? ["http://localhost:5173", "http://127.0.0.1:5173"].map((origin) => normalizeOrigin(origin))
   : [];
 const mergedOrigins = Array.from(new Set([...allowedOrigins, ...extraOrigins]));
 const isProduction = process.env.NODE_ENV === "production";
@@ -31,7 +34,8 @@ if (isProduction && mergedOrigins.length === 0) {
 
 const corsOrigin = mergedOrigins.length
   ? (origin, callback) => {
-      if (!origin || mergedOrigins.includes(origin)) {
+      const requestOrigin = normalizeOrigin(origin);
+      if (!requestOrigin || mergedOrigins.includes(requestOrigin)) {
         return callback(null, true);
       }
       return callback(new Error("Origen no permitido por CORS"));
