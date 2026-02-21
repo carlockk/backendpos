@@ -110,6 +110,19 @@ const getReturnUrl = () => {
   return url;
 };
 
+const getCheckoutResultUrl = () => {
+  const url = String(
+    process.env.TRANSBANK_CHECKOUT_RESULT_URL ||
+      process.env.CHECKOUT_RESULT_URL ||
+      process.env.FRONTEND_CHECKOUT_RESULT_URL ||
+      ""
+  ).trim();
+  if (!url) {
+    throw new Error("Debes configurar TRANSBANK_CHECKOUT_RESULT_URL para redirigir el resultado de Webpay");
+  }
+  return url;
+};
+
 const isPagoAutorizado = (result) => {
   const status = String(result?.status || "").toUpperCase();
   const responseCode = Number(result?.response_code);
@@ -171,6 +184,33 @@ const crearVentaClienteDesdeCheckout = async (sessionId) => {
 
   return venta;
 };
+
+router.all("/retorno-webpay", async (req, res) => {
+  try {
+    const checkoutResultUrl = getCheckoutResultUrl();
+
+    const tokenWs = sanitizeOptionalText(
+      req.body?.token_ws || req.query?.token_ws || req.body?.token || req.query?.token,
+      { max: 180 }
+    );
+    const tbkToken = sanitizeOptionalText(req.body?.TBK_TOKEN || req.query?.TBK_TOKEN, { max: 220 });
+    const tbkIdSesion = sanitizeOptionalText(req.body?.TBK_ID_SESION || req.query?.TBK_ID_SESION, { max: 120 });
+    const tbkOrdenCompra = sanitizeOptionalText(req.body?.TBK_ORDEN_COMPRA || req.query?.TBK_ORDEN_COMPRA, {
+      max: 120,
+    });
+
+    const params = new URLSearchParams();
+    if (tokenWs) params.set("token_ws", tokenWs);
+    if (tbkToken) params.set("TBK_TOKEN", tbkToken);
+    if (tbkIdSesion) params.set("TBK_ID_SESION", tbkIdSesion);
+    if (tbkOrdenCompra) params.set("TBK_ORDEN_COMPRA", tbkOrdenCompra);
+
+    const redirectUrl = params.toString() ? `${checkoutResultUrl}?${params.toString()}` : checkoutResultUrl;
+    return res.redirect(302, redirectUrl);
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo redirigir el retorno de Webpay", detail: error?.message || "" });
+  }
+});
 
 router.post("/crear-sesion", async (req, res) => {
   try {

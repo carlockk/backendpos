@@ -15,7 +15,10 @@ const PORT = process.env.PORT || 5000;
 
 // 🛡️ Middleware
 const normalizeOrigin = (value) =>
-  String(value || "").trim().replace(/\/+$/, "");
+  String(value || "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .replace(/\/+$/, "");
 
 const allowedOrigins = (process.env.CORS_ORIGINS || "")
   .split(",")
@@ -25,6 +28,8 @@ const allowLocalhostCors = String(process.env.CORS_ALLOW_LOCALHOST || "false").t
 const extraOrigins = allowLocalhostCors
   ? ["http://localhost:5173", "http://127.0.0.1:5173"].map((origin) => normalizeOrigin(origin))
   : [];
+const allowVercelPreviewCors =
+  String(process.env.CORS_ALLOW_VERCEL_PREVIEW || "false").toLowerCase() === "true";
 const mergedOrigins = Array.from(new Set([...allowedOrigins, ...extraOrigins]));
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -35,7 +40,12 @@ if (isProduction && mergedOrigins.length === 0) {
 const corsOrigin = mergedOrigins.length
   ? (origin, callback) => {
       const requestOrigin = normalizeOrigin(origin);
-      if (!requestOrigin || mergedOrigins.includes(requestOrigin)) {
+      const isAllowedVercelPreview =
+        allowVercelPreviewCors &&
+        requestOrigin.startsWith("https://") &&
+        requestOrigin.endsWith(".vercel.app");
+
+      if (!requestOrigin || mergedOrigins.includes(requestOrigin) || isAllowedVercelPreview) {
         return callback(null, true);
       }
       return callback(new Error("Origen no permitido por CORS"));
@@ -52,6 +62,7 @@ app.use(
     },
   })
 );
+app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(restringirMesero);
 
