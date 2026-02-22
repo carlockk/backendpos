@@ -334,7 +334,7 @@ router.get("/local/repartidores", adjuntarScopeLocal, requiereLocal, async (req,
 // Uso POS/RepartidorFront: asignar o limpiar repartidor de pedido delivery
 router.patch("/local/pedidos/:id/repartidor", adjuntarScopeLocal, requiereLocal, async (req, res) => {
   try {
-    if (!["admin", "superadmin"].includes(req.userRole)) {
+    if (!["admin", "superadmin", "cajero"].includes(req.userRole)) {
       return res.status(403).json({ error: "No autorizado" });
     }
 
