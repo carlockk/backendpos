@@ -161,6 +161,7 @@ const crearVentaClienteDesdeCheckout = async (sessionId) => {
     productos,
     total: pending.total,
     tipo_pago: pending.tipo_pago || "tarjeta_webpay",
+    tipo_pedido: pending.tipo_pedido || "tienda",
     estado_pedido: "pendiente",
     historial_estados: [
       {
@@ -175,6 +176,7 @@ const crearVentaClienteDesdeCheckout = async (sessionId) => {
     cliente_id: pending.cliente_id || null,
     cliente_email: pending.cliente_email || "sin_correo",
     cliente_nombre: pending.cliente_nombre || "",
+    cliente_direccion: pending.cliente_direccion || "",
     cliente_telefono: pending.cliente_telefono || "",
   });
 
@@ -228,6 +230,7 @@ router.post("/crear-sesion", async (req, res) => {
 
     const clienteNombre = sanitizeText(order?.cliente?.nombre, { max: 120 });
     const clienteTelefono = sanitizeText(order?.cliente?.telefono, { max: 40 });
+    const clienteDireccion = sanitizeOptionalText(order?.cliente?.direccion, { max: 220 }) || "";
     const clienteCorreoRaw = normalizeEmail(order?.cliente?.correo || "");
 
     if (!clienteNombre || !clienteTelefono) {
@@ -263,6 +266,7 @@ router.post("/crear-sesion", async (req, res) => {
       cliente_id: clienteId || null,
       cliente_email: emailFinal,
       cliente_nombre: clienteNombre,
+      cliente_direccion: clienteDireccion,
       cliente_telefono: clienteTelefono,
       tipo_pedido: tipoPedido,
       tipo_pago: "tarjeta_webpay",

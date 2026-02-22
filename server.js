@@ -26,7 +26,9 @@ const allowedOrigins = (process.env.CORS_ORIGINS || "")
   .filter(Boolean);
 const allowLocalhostCors = String(process.env.CORS_ALLOW_LOCALHOST || "false").toLowerCase() === "true";
 const extraOrigins = allowLocalhostCors
-  ? ["http://localhost:5173", "http://127.0.0.1:5173"].map((origin) => normalizeOrigin(origin))
+  ? Array.from({ length: 10 }, (_, idx) => 5173 + idx)
+      .flatMap((port) => [`http://localhost:${port}`, `http://127.0.0.1:${port}`])
+      .map((origin) => normalizeOrigin(origin))
   : [];
 const allowVercelPreviewCors =
   String(process.env.CORS_ALLOW_VERCEL_PREVIEW || "false").toLowerCase() === "true";

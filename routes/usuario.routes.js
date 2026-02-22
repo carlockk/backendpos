@@ -7,7 +7,7 @@ const { sanitizeText, normalizeEmail, isValidEmail } = require('../utils/input')
 const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
-const ROLES_VALIDOS = new Set(['superadmin', 'admin', 'cajero', 'mesero']);
+const ROLES_VALIDOS = new Set(['superadmin', 'admin', 'cajero', 'mesero', 'repartidor']);
 
 router.use(adjuntarScopeLocal);
 
@@ -74,13 +74,17 @@ router.post('/', async (req, res) => {
       }
     }
 
-    if (!localId || !mongoose.Types.ObjectId.isValid(localId)) {
-      return res.status(400).json({ error: 'Local invalido' });
-    }
+    const esRepartidorGlobal = req.userRole === 'superadmin' && rol === 'repartidor' && !localId;
 
-    const localExiste = await Local.findById(localId);
-    if (!localExiste) {
-      return res.status(400).json({ error: 'Local no encontrado' });
+    if (!esRepartidorGlobal) {
+      if (!localId || !mongoose.Types.ObjectId.isValid(localId)) {
+        return res.status(400).json({ error: 'Local invalido' });
+      }
+
+      const localExiste = await Local.findById(localId);
+      if (!localExiste) {
+        return res.status(400).json({ error: 'Local no encontrado' });
+      }
     }
 
     const existe = await Usuario.findOne({ email });
@@ -89,7 +93,7 @@ router.post('/', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const nuevo = new Usuario({ nombre, email, password: hashedPassword, rol, local: localId });
+    const nuevo = new Usuario({ nombre, email, password: hashedPassword, rol, local: esRepartidorGlobal ? null : localId });
     await nuevo.save();
 
     res.status(201).json({ mensaje: 'Usuario creado correctamente' });
@@ -112,13 +116,23 @@ router.post('/', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    if (!req.localId) {
-      return res.status(400).json({ error: 'Local requerido' });
+    let filtro = {};
+    if (req.userRole === 'superadmin') {
+      if (req.localId) {
+        filtro = {
+          $or: [
+            { local: req.localId },
+            { rol: 'repartidor', local: null }
+          ]
+        };
+      }
+    } else {
+      if (!req.localId) {
+        return res.status(400).json({ error: 'Local requerido' });
+      }
+      filtro = { local: req.localId };
     }
-    const usuarios = await Usuario.find(
-      { local: req.localId },
-      '-password'
-    ).populate('local', 'nombre direccion telefono correo');
+    const usuarios = await Usuario.find(filtro, '-password').populate('local', 'nombre direccion telefono correo');
     res.json(usuarios);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener usuarios' });

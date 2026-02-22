@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const router = express.Router();
 const VentaCliente = require("../models/ventaCliente.model");
 const PedidoEstadoConfig = require("../models/pedidoEstadoConfig.model");
+const Usuario = require("../models/usuario.model");
 const authMiddleware = require("../middlewares/auth");
 const Cliente = require("../models/Cliente");
 const {
@@ -21,9 +22,21 @@ const DEFAULT_ESTADOS_PEDIDO = [
   "pendiente",
   "aceptado",
   "preparando",
+  "repartidor llego al restaurante",
+  "repartidor esta en espera",
+  "repartidor va con tu pedido",
+  "llego el repartidor",
   "listo",
   "entregado",
   "rechazado",
+  "cancelado"
+];
+const DEFAULT_ESTADOS_REPARTIDOR = [
+  "repartidor llego al restaurante",
+  "repartidor esta en espera",
+  "repartidor va con tu pedido",
+  "llego el repartidor",
+  "entregado",
   "cancelado"
 ];
 
@@ -45,13 +58,41 @@ const obtenerConfigEstados = async (localId) => {
   if (!config) {
     config = await PedidoEstadoConfig.create({
       local: localId,
-      estados: DEFAULT_ESTADOS_PEDIDO
+      estados: DEFAULT_ESTADOS_PEDIDO,
+      estados_repartidor: DEFAULT_ESTADOS_REPARTIDOR
     });
     return config;
   }
 
+  let changed = false;
+
   if (!Array.isArray(config.estados) || config.estados.length === 0) {
     config.estados = DEFAULT_ESTADOS_PEDIDO;
+    changed = true;
+  }
+
+  const actuales = new Set(config.estados.map((item) => String(item).toLowerCase()));
+  const faltantes = DEFAULT_ESTADOS_PEDIDO.filter((estado) => !actuales.has(estado));
+  if (faltantes.length > 0) {
+    config.estados = [...config.estados, ...faltantes];
+    changed = true;
+  }
+
+  if (!Array.isArray(config.estados_repartidor) || config.estados_repartidor.length === 0) {
+    config.estados_repartidor = [...DEFAULT_ESTADOS_REPARTIDOR];
+    changed = true;
+  }
+
+  const estadosSet = new Set((config.estados || []).map((item) => String(item).toLowerCase()));
+  const repartidorSaneado = (config.estados_repartidor || [])
+    .map((item) => String(item || "").toLowerCase())
+    .filter((item, idx, arr) => item && arr.indexOf(item) === idx && estadosSet.has(item));
+  if (repartidorSaneado.length !== (config.estados_repartidor || []).length) {
+    config.estados_repartidor = repartidorSaneado;
+    changed = true;
+  }
+
+  if (changed) {
     await config.save();
   }
 
@@ -85,6 +126,47 @@ const normalizarProductos = (raw) => {
   }));
 };
 
+const normalizarTipoPedido = (raw) => {
+  const tipo = (sanitizeOptionalText(raw, { max: 30 }) || "").toLowerCase();
+  if (!tipo) return "";
+  if (["delivery", "domicilio", "reparto", "reparto_domicilio"].includes(tipo)) return "delivery";
+  if (["retiro", "retiro_tienda", "pickup"].includes(tipo)) return "retiro";
+  if (["tienda", "local", "consumo_local"].includes(tipo)) return "tienda";
+  return tipo;
+};
+
+const inferirTipoPedidoDesdeProductos = (productos = []) => {
+  for (const item of Array.isArray(productos) ? productos : []) {
+    const obs = String(item?.observacion || "").toLowerCase();
+    if (!obs) continue;
+    if (obs.includes("delivery:") && !obs.includes("sin delivery")) {
+      return "delivery";
+    }
+  }
+  return "tienda";
+};
+
+const esPedidoDeliveryLegacy = (pedido) => {
+  const tipo = normalizarTipoPedido(pedido?.tipo_pedido);
+  if (tipo === "delivery") return true;
+  const items = Array.isArray(pedido?.productos) ? pedido.productos : [];
+  return items.some((item) => {
+    const obs = String(item?.observacion || "").toLowerCase();
+    return obs.includes("delivery:");
+  });
+};
+
+const obtenerRangoMes = (anioRaw, mesRaw) => {
+  const anio = Number(anioRaw);
+  const mes = Number(mesRaw);
+  if (!Number.isInteger(anio) || !Number.isInteger(mes) || anio < 2000 || anio > 2200 || mes < 1 || mes > 12) {
+    return null;
+  }
+  const inicio = new Date(Date.UTC(anio, mes - 1, 1, 0, 0, 0, 0));
+  const fin = new Date(Date.UTC(anio, mes, 1, 0, 0, 0, 0));
+  return { inicio, fin };
+};
+
 // Registrar pedido web (cliente logueado o invitado)
 router.post("/", async (req, res) => {
   try {
@@ -94,8 +176,10 @@ router.post("/", async (req, res) => {
     const productos = normalizarProductos(req.body.productos);
     const total = toNumberOrNull(req.body.total);
     const tipoPago = sanitizeText(req.body.tipo_pago, { max: 30 });
+    const tipoPedidoRaw = normalizarTipoPedido(req.body.tipo_pedido);
     const emailNormalizado = normalizeEmail(req.body.cliente_email);
     const clienteNombre = sanitizeOptionalText(req.body.cliente_nombre, { max: 120 }) || "";
+    const clienteDireccion = sanitizeOptionalText(req.body.cliente_direccion, { max: 220 }) || "";
     const clienteTelefono = sanitizeOptionalText(req.body.cliente_telefono, { max: 40 }) || "";
 
     if (!productos || productos.length === 0 || total === null || !tipoPago) {
@@ -128,6 +212,7 @@ router.post("/", async (req, res) => {
       productos,
       total,
       tipo_pago: tipoPago,
+      tipo_pedido: tipoPedidoRaw || inferirTipoPedidoDesdeProductos(productos),
       estado_pedido: "pendiente",
       historial_estados: [
         {
@@ -141,6 +226,7 @@ router.post("/", async (req, res) => {
       cliente_id: clienteId || null,
       cliente_email: emailFinal,
       cliente_nombre: clienteNombre,
+      cliente_direccion: clienteDireccion,
       cliente_telefono: clienteTelefono,
       local: localId
     });
@@ -184,14 +270,172 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 // Uso POS: listar pedidos web por local
 router.get("/local/pedidos", adjuntarScopeLocal, requiereLocal, async (req, res) => {
   try {
+    if (!["admin", "superadmin", "cajero", "repartidor"].includes(req.userRole)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
     const filtro = { local: req.localId };
     const estado = sanitizeOptionalText(req.query?.estado, { max: 30 }) || "";
-    if (estado) filtro.estado_pedido = estado;
+    const tipoPedido = normalizarTipoPedido(req.query?.tipo_pedido);
+    const soloDomicilio = String(req.query?.solo_domicilio || "").toLowerCase() === "true";
+    const rangoMes = obtenerRangoMes(req.query?.anio, req.query?.mes);
 
-    const pedidos = await VentaCliente.find(filtro).sort({ fecha: -1 });
+    if (estado) filtro.estado_pedido = estado;
+    if (tipoPedido === "delivery" || soloDomicilio) {
+      filtro.$or = [
+        { tipo_pedido: "delivery" },
+        { productos: { $elemMatch: { observacion: /delivery:/i } } }
+      ];
+    } else if (tipoPedido) {
+      filtro.tipo_pedido = tipoPedido;
+    }
+    if (rangoMes) filtro.fecha = { $gte: rangoMes.inicio, $lt: rangoMes.fin };
+
+    if (req.userRole === "repartidor") {
+      filtro.repartidor_asignado = req.userId || null;
+      if (!filtro.$or) {
+        filtro.$or = [
+          { tipo_pedido: "delivery" },
+          { productos: { $elemMatch: { observacion: /delivery:/i } } }
+        ];
+      }
+    }
+
+    const pedidos = await VentaCliente.find(filtro)
+      .populate("repartidor_asignado", "nombre email rol")
+      .sort({ fecha: -1 });
     res.json(pedidos);
   } catch (error) {
     res.status(500).json({ msg: "Error al obtener pedidos del local", error });
+  }
+});
+
+// Uso POS/RepartidorFront: obtener repartidores activos del local
+router.get("/local/repartidores", adjuntarScopeLocal, requiereLocal, async (req, res) => {
+  try {
+    if (!["admin", "superadmin", "cajero", "repartidor"].includes(req.userRole)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    const repartidores = await Usuario.find(
+      {
+        rol: "repartidor",
+        $or: [{ local: req.localId }, { local: null }]
+      },
+      "_id nombre email rol local"
+    ).sort({ nombre: 1 });
+
+    res.json(repartidores);
+  } catch (error) {
+    res.status(500).json({ msg: "Error al obtener repartidores", error });
+  }
+});
+
+// Uso POS/RepartidorFront: asignar o limpiar repartidor de pedido delivery
+router.patch("/local/pedidos/:id/repartidor", adjuntarScopeLocal, requiereLocal, async (req, res) => {
+  try {
+    if (!["admin", "superadmin"].includes(req.userRole)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    const pedido = await VentaCliente.findOne({ _id: req.params.id, local: req.localId });
+    if (!pedido) {
+      return res.status(404).json({ error: "Pedido no encontrado" });
+    }
+
+    if (!esPedidoDeliveryLegacy(pedido)) {
+      return res.status(400).json({ error: "Solo puedes asignar repartidor a pedidos delivery" });
+    }
+
+    const repartidorIdRaw = req.body?.repartidor_id;
+    const limpiar = repartidorIdRaw === null || String(repartidorIdRaw || "").trim() === "";
+
+    if (limpiar) {
+      pedido.repartidor_asignado = null;
+      pedido.fecha_asignacion_repartidor = null;
+      pedido.historial_estados = Array.isArray(pedido.historial_estados) ? pedido.historial_estados : [];
+      pedido.historial_estados.push({
+        estado: pedido.estado_pedido || "pendiente",
+        nota: "Repartidor desasignado",
+        usuario_id: req.userId || null,
+        usuario_rol: req.userRole || "",
+        fecha: new Date()
+      });
+      await pedido.save();
+      const salida = await VentaCliente.findById(pedido._id).populate("repartidor_asignado", "nombre email rol");
+      return res.json(salida);
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(repartidorIdRaw)) {
+      return res.status(400).json({ error: "repartidor_id invalido" });
+    }
+
+    const repartidor = await Usuario.findOne({
+      _id: repartidorIdRaw,
+      rol: "repartidor",
+      $or: [{ local: req.localId }, { local: null }]
+    });
+    if (!repartidor) {
+      return res.status(404).json({ error: "Repartidor no encontrado para este local" });
+    }
+
+    pedido.repartidor_asignado = repartidor._id;
+    pedido.fecha_asignacion_repartidor = new Date();
+    pedido.historial_estados = Array.isArray(pedido.historial_estados) ? pedido.historial_estados : [];
+    pedido.historial_estados.push({
+      estado: pedido.estado_pedido || "pendiente",
+      nota: `Repartidor asignado: ${repartidor.nombre || repartidor.email || repartidor._id}`,
+      usuario_id: req.userId || null,
+      usuario_rol: req.userRole || "",
+      fecha: new Date()
+    });
+
+    await pedido.save();
+    const salida = await VentaCliente.findById(pedido._id).populate("repartidor_asignado", "nombre email rol");
+    res.json(salida);
+  } catch (error) {
+    res.status(500).json({ msg: "Error al asignar repartidor", error });
+  }
+});
+
+// Uso POS/RepartidorFront: metricas de reparto delivery por mes y acumulado
+router.get("/local/repartos/resumen", adjuntarScopeLocal, requiereLocal, async (req, res) => {
+  try {
+    if (!["admin", "superadmin", "cajero", "repartidor"].includes(req.userRole)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    const base = {
+      local: req.localId,
+      $or: [
+        { tipo_pedido: "delivery" },
+        { productos: { $elemMatch: { observacion: /delivery:/i } } }
+      ]
+    };
+    if (req.userRole === "repartidor") {
+      base.repartidor_asignado = req.userId || null;
+    }
+
+    const totalHistorico = await VentaCliente.countDocuments(base);
+    const rangoMes = obtenerRangoMes(req.query?.anio, req.query?.mes);
+    let totalMes = 0;
+    let totalMesEntregados = 0;
+
+    if (rangoMes) {
+      totalMes = await VentaCliente.countDocuments({
+        ...base,
+        fecha: { $gte: rangoMes.inicio, $lt: rangoMes.fin }
+      });
+      totalMesEntregados = await VentaCliente.countDocuments({
+        ...base,
+        estado_pedido: "entregado",
+        fecha: { $gte: rangoMes.inicio, $lt: rangoMes.fin }
+      });
+    }
+
+    res.json({ totalHistorico, totalMes, totalMesEntregados });
+  } catch (error) {
+    res.status(500).json({ msg: "Error al obtener resumen de repartos", error });
   }
 });
 
@@ -224,6 +468,49 @@ router.get("/local/estados", adjuntarScopeLocal, requiereLocal, async (req, res)
     res.json({ estados: config.estados });
   } catch (error) {
     res.status(500).json({ msg: "Error al obtener estados de pedido", error });
+  }
+});
+
+// Uso POS/RepartidorFront: estados permitidos para repartidor en el local
+router.get("/local/estados-repartidor", adjuntarScopeLocal, requiereLocal, async (req, res) => {
+  try {
+    if (!["admin", "superadmin", "cajero", "repartidor"].includes(req.userRole)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+    const config = await obtenerConfigEstados(req.localId);
+    const estados = Array.isArray(config.estados_repartidor) ? config.estados_repartidor : [];
+    res.json({ estados });
+  } catch (error) {
+    res.status(500).json({ msg: "Error al obtener estados de repartidor", error });
+  }
+});
+
+// Uso POS: configurar estados permitidos para repartidor (solo admin/superadmin)
+router.put("/local/estados-repartidor", adjuntarScopeLocal, requiereLocal, async (req, res) => {
+  try {
+    if (!["admin", "superadmin"].includes(req.userRole)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    const raw = Array.isArray(req.body?.estados) ? req.body.estados : [];
+    const limpios = raw
+      .map((item) => sanitizeOptionalText(item, { max: 30 }) || "")
+      .map((item) => item.toLowerCase())
+      .filter((item, idx, arr) => item && arr.indexOf(item) === idx);
+
+    const config = await obtenerConfigEstados(req.localId);
+    const permitidos = new Set((config.estados || []).map((item) => String(item).toLowerCase()));
+    const finales = limpios.filter((item) => permitidos.has(item));
+
+    if (finales.length === 0) {
+      return res.status(400).json({ error: "Debes asignar al menos un estado para repartidor" });
+    }
+
+    config.estados_repartidor = finales;
+    await config.save();
+    res.json({ estados: config.estados_repartidor });
+  } catch (error) {
+    res.status(500).json({ msg: "Error al guardar estados de repartidor", error });
   }
 });
 
@@ -287,6 +574,11 @@ router.put("/local/estados/:estado", adjuntarScopeLocal, requiereLocal, async (r
     }
 
     config.estados[index] = estadoNuevo;
+    if (Array.isArray(config.estados_repartidor)) {
+      config.estados_repartidor = config.estados_repartidor.map((item) =>
+        String(item).toLowerCase() === estadoActual ? estadoNuevo : item
+      );
+    }
     await config.save();
 
     if (estadoActual !== estadoNuevo) {
@@ -337,6 +629,17 @@ router.delete("/local/estados/:estado", adjuntarScopeLocal, requiereLocal, async
     }
 
     config.estados = siguiente;
+    if (Array.isArray(config.estados_repartidor)) {
+      config.estados_repartidor = config.estados_repartidor.filter(
+        (item) => String(item).toLowerCase() !== estado
+      );
+      if (config.estados_repartidor.length === 0) {
+        const fallback = DEFAULT_ESTADOS_REPARTIDOR.filter((item) =>
+          config.estados.some((estadoCfg) => String(estadoCfg).toLowerCase() === item)
+        );
+        config.estados_repartidor = fallback.length > 0 ? fallback : [config.estados[0]].filter(Boolean);
+      }
+    }
     await config.save();
 
     res.json({ estados: config.estados });
@@ -348,7 +651,7 @@ router.delete("/local/estados/:estado", adjuntarScopeLocal, requiereLocal, async
 // Uso POS: cambiar estado de pedido web
 router.patch("/local/pedidos/:id/estado", adjuntarScopeLocal, requiereLocal, async (req, res) => {
   try {
-    if (!["admin", "superadmin", "cajero"].includes(req.userRole)) {
+    if (!["admin", "superadmin", "cajero", "repartidor"].includes(req.userRole)) {
       return res.status(403).json({ error: "No autorizado" });
     }
 
@@ -369,6 +672,21 @@ router.patch("/local/pedidos/:id/estado", adjuntarScopeLocal, requiereLocal, asy
     const venta = await VentaCliente.findOne({ _id: req.params.id, local: req.localId });
     if (!venta) {
       return res.status(404).json({ error: "Pedido no encontrado" });
+    }
+
+    if (req.userRole === "repartidor") {
+      const estadosRepartidor = Array.isArray(config.estados_repartidor)
+        ? config.estados_repartidor.map((item) => String(item).toLowerCase())
+        : [];
+      if (!estadosRepartidor.includes(estado)) {
+        return res.status(403).json({ error: "Estado no permitido para repartidor" });
+      }
+
+      const esDelivery = esPedidoDeliveryLegacy(venta);
+      const esAsignado = venta.repartidor_asignado && String(venta.repartidor_asignado) === String(req.userId || "");
+      if (!esDelivery || !esAsignado) {
+        return res.status(403).json({ error: "Solo puedes cambiar estados de tus repartos asignados" });
+      }
     }
 
     venta.estado_pedido = estado;
@@ -396,7 +714,7 @@ router.get("/public/:id", async (req, res) => {
     }
 
     const venta = await VentaCliente.findById(req.params.id).select(
-      "_id numero_pedido estado_pedido estado status fecha total tipo_pago local cliente_nombre cliente_telefono productos"
+      "_id numero_pedido estado_pedido estado status fecha total tipo_pago tipo_pedido local cliente_nombre cliente_direccion cliente_telefono productos"
     );
 
     if (!venta) {

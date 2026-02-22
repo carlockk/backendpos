@@ -28,6 +28,7 @@ const VentaClienteSchema = new mongoose.Schema({
   productos: [ProductoSchema],
   total: Number,
   tipo_pago: String,
+  tipo_pedido: { type: String, default: "tienda" },
   estado_pedido: { type: String, default: "pendiente" },
   historial_estados: [
     {
@@ -43,7 +44,10 @@ const VentaClienteSchema = new mongoose.Schema({
   cliente_id: { type: mongoose.Schema.Types.ObjectId, ref: "Cliente" },
   cliente_email: String,
   cliente_nombre: String,
-  cliente_telefono: String
+  cliente_direccion: { type: String, default: "" },
+  cliente_telefono: String,
+  repartidor_asignado: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario", default: null },
+  fecha_asignacion_repartidor: { type: Date, default: null }
 });
 
 module.exports = mongoose.model("VentaCliente", VentaClienteSchema);

@@ -7,6 +7,7 @@ const CheckoutSessionSchema = new mongoose.Schema(
     cliente_id: { type: mongoose.Schema.Types.ObjectId, ref: "Cliente", default: null },
     cliente_email: { type: String, default: "sin_correo" },
     cliente_nombre: { type: String, default: "" },
+    cliente_direccion: { type: String, default: "" },
     cliente_telefono: { type: String, default: "" },
     tipo_pedido: { type: String, default: "tienda" },
     tipo_pago: { type: String, default: "online" },

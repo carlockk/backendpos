@@ -89,6 +89,7 @@ const adjuntarScopeLocal = (req, res, next) => {
         req.localId = localFromToken || null;
       }
     } else {
+      const puedeElegirLocalPorHeader = roleFromToken === 'repartidor' && !localFromToken;
       if (
         headerLocalRaw !== undefined &&
         headerLocalRaw !== null &&
@@ -98,7 +99,14 @@ const adjuntarScopeLocal = (req, res, next) => {
       ) {
         return res.status(403).json({ error: 'No puedes operar sobre otro local' });
       }
-      req.localId = localFromToken || null;
+      if (puedeElegirLocalPorHeader && headerLocalRaw !== undefined && String(headerLocalRaw).trim() !== '') {
+        if (!mongoose.Types.ObjectId.isValid(headerLocalRaw)) {
+          return res.status(400).json({ error: 'Local invalido' });
+        }
+        req.localId = String(headerLocalRaw);
+      } else {
+        req.localId = localFromToken || null;
+      }
     }
 
     return next();
