@@ -390,14 +390,17 @@ router.post('/', upload.single('imagen'), async (req, res) => {
     });
 
     const localGuardado = await local.save();
-    const poblado = await localGuardado.populate({
-      path: 'productoBase',
-      populate: { path: 'categoria', select: 'nombre parent' }
-    }).populate({
-      path: 'agregados',
-      select: 'nombre precio activo grupo',
-      populate: { path: 'grupo', select: 'titulo' }
-    });
+    const poblado = await localGuardado.populate([
+      {
+        path: 'productoBase',
+        populate: { path: 'categoria', select: 'nombre parent' }
+      },
+      {
+        path: 'agregados',
+        select: 'nombre precio activo grupo',
+        populate: { path: 'grupo', select: 'titulo' }
+      }
+    ]);
 
     res.status(201).json(proyectarProductoLocal(poblado));
   } catch (err) {
