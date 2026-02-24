@@ -471,9 +471,9 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         sku: v.sku
       }));
       const stockCalculado = calcularStockTotal(variantes, stockBase);
-      const categoriaId = normalizeCategoriaId(req.body.categoria);
+      let categoriaId = normalizeCategoriaId(req.body.categoria);
       if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
-        throw new Error('La categoria es invalida');
+        categoriaId = null;
       }
       if (categoriaId) {
         const categoria = await Categoria.findOne({ _id: categoriaId, local: req.localId });
