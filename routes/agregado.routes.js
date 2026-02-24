@@ -212,6 +212,119 @@ router.post('/', async (req, res) => {
   }
 });
 
+router.post('/clonar', async (req, res) => {
+  try {
+    if (req.userRole !== 'superadmin') {
+      return res.status(403).json({ error: 'No tienes permisos para clonar agregados' });
+    }
+
+    const { sourceLocalId, agregadoId, clonarTodas } = req.body || {};
+    if (!sourceLocalId || (!agregadoId && !clonarTodas)) {
+      return res.status(400).json({ error: 'Datos incompletos' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(sourceLocalId)) {
+      return res.status(400).json({ error: 'Local origen invalido' });
+    }
+    if (agregadoId && !mongoose.Types.ObjectId.isValid(agregadoId)) {
+      return res.status(400).json({ error: 'Agregado invalido' });
+    }
+    if (String(sourceLocalId) === String(req.localId)) {
+      return res.status(400).json({ error: 'El local origen y destino deben ser distintos' });
+    }
+
+    let origen = [];
+    if (clonarTodas) {
+      origen = await Agregado.find({ local: sourceLocalId })
+        .populate('grupo', 'titulo descripcion')
+        .lean();
+      if (origen.length === 0) {
+        return res.status(400).json({ error: 'No hay agregados para clonar' });
+      }
+    } else {
+      const agregado = await Agregado.findOne({ _id: agregadoId, local: sourceLocalId })
+        .populate('grupo', 'titulo descripcion')
+        .lean();
+      if (!agregado) {
+        return res.status(404).json({ error: 'Agregado origen no encontrado' });
+      }
+      origen = [agregado];
+    }
+
+    const nombres = origen.map((a) => sanitizeText(a?.nombre, { max: 120 })).filter(Boolean);
+    const existentes = await Agregado.find({
+      local: req.localId,
+      nombre: { $in: nombres }
+    }).select('nombre').lean();
+    if (existentes.length > 0) {
+      return res.status(400).json({
+        error: `Ya existe el agregado "${existentes[0].nombre}" en este local`
+      });
+    }
+
+    const gruposOrigen = Array.from(
+      new Map(
+        origen
+          .filter((a) => a?.grupo?.titulo)
+          .map((a) => [String(a.grupo.titulo).trim(), a.grupo])
+      ).values()
+    );
+    const titulosGrupo = gruposOrigen
+      .map((g) => sanitizeText(g?.titulo, { max: 100 }))
+      .filter(Boolean);
+    const gruposDestinoExistentes = await AgregadoGrupo.find({
+      local: req.localId,
+      titulo: { $in: titulosGrupo }
+    }).select('_id titulo').lean();
+
+    const grupoPorTitulo = new Map(
+      gruposDestinoExistentes.map((g) => [String(g.titulo).trim().toLowerCase(), g._id])
+    );
+    let gruposCreados = 0;
+    for (const grupo of gruposOrigen) {
+      const titulo = sanitizeText(grupo?.titulo, { max: 100 });
+      if (!titulo) continue;
+      const key = titulo.toLowerCase();
+      if (grupoPorTitulo.has(key)) continue;
+      const creado = await AgregadoGrupo.create({
+        titulo,
+        descripcion: sanitizeOptionalText(grupo?.descripcion, { max: 300 }) || '',
+        local: req.localId,
+        actualizado_en: new Date()
+      });
+      grupoPorTitulo.set(key, creado._id);
+      gruposCreados += 1;
+    }
+
+    const docs = origen.map((a) => {
+      const nombre = sanitizeText(a?.nombre, { max: 120 });
+      const descripcion = sanitizeOptionalText(a?.descripcion, { max: 300 }) || '';
+      const grupoTitulo = sanitizeText(a?.grupo?.titulo, { max: 100 });
+      const grupoId = grupoTitulo ? grupoPorTitulo.get(grupoTitulo.toLowerCase()) || null : null;
+      const precio = Number.isFinite(Number(a?.precio)) ? Number(a.precio) : null;
+      return {
+        nombre,
+        descripcion,
+        precio,
+        grupo: grupoId,
+        categorias: [],
+        productos: [],
+        local: req.localId,
+        actualizado_en: new Date()
+      };
+    });
+
+    await Agregado.insertMany(docs);
+
+    return res.json({
+      mensaje: 'Agregados clonados correctamente',
+      cantidad: docs.length,
+      grupos_creados: gruposCreados
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Error al clonar agregados' });
+  }
+});
+
 router.put('/:id', async (req, res) => {
   try {
     if (!puedeCrearEditar(req.userRole)) {
