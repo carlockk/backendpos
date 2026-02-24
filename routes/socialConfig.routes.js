@@ -1,6 +1,8 @@
 const express = require('express');
 const multer = require('multer');
+const mongoose = require('mongoose');
 const SocialConfig = require('../models/socialConfig.model');
+const Local = require('../models/local.model');
 const { sanitizeOptionalText } = require('../utils/input');
 const { subirImagen, eliminarImagen } = require('../utils/cloudinary');
 const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
@@ -122,6 +124,75 @@ router.put('/logo', upload.single('logo'), async (req, res) => {
     });
   } catch (error) {
     res.status(400).json({ error: error.message || 'Error al guardar logo web cliente' });
+  }
+});
+
+router.post('/clonar', async (req, res) => {
+  try {
+    if (req.userRole !== 'superadmin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const sourceLocalId = String(req.body?.sourceLocalId || req.localId || '').trim();
+    const targetsRaw = Array.isArray(req.body?.targetLocalIds) ? req.body.targetLocalIds : [];
+    const targetLocalIds = Array.from(
+      new Set(
+        targetsRaw
+          .map((id) => String(id || '').trim())
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      )
+    );
+
+    if (!mongoose.Types.ObjectId.isValid(sourceLocalId)) {
+      return res.status(400).json({ error: 'Local origen invalido' });
+    }
+    if (targetLocalIds.length === 0) {
+      return res.status(400).json({ error: 'Debes seleccionar al menos un local destino' });
+    }
+    if (targetLocalIds.some((id) => id === sourceLocalId)) {
+      return res.status(400).json({ error: 'El local destino debe ser distinto al local origen' });
+    }
+
+    const [sourceLocal, targetLocales] = await Promise.all([
+      Local.findById(sourceLocalId).lean(),
+      Local.find({ _id: { $in: targetLocalIds } }).select('_id').lean()
+    ]);
+
+    if (!sourceLocal) {
+      return res.status(404).json({ error: 'Local origen no encontrado' });
+    }
+    if (targetLocales.length !== targetLocalIds.length) {
+      return res.status(400).json({ error: 'Uno o mas locales destino no existen' });
+    }
+
+    const origen = await obtenerConfig(sourceLocalId);
+
+    await Promise.all(
+      targetLocalIds.map(async (localId) => {
+        const destino = await obtenerConfig(localId);
+
+        NETWORKS.forEach((key) => {
+          const entry = origen?.[key] || emptySocial();
+          destino[key] = {
+            enabled: Boolean(entry.enabled),
+            url: entry.url || ''
+          };
+        });
+
+        // Se copia URL del logo para evitar eliminar recursos cloudinary compartidos.
+        destino.logo_url = origen.logo_url || '';
+        destino.logo_cloudinary_id = '';
+        destino.actualizado_en = new Date();
+        await destino.save();
+      })
+    );
+
+    return res.json({
+      mensaje: 'Configuracion social clonada correctamente',
+      cantidad: targetLocalIds.length
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Error al clonar configuracion social' });
   }
 });
 
