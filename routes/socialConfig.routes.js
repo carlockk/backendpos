@@ -1,9 +1,12 @@
 const express = require('express');
+const multer = require('multer');
 const SocialConfig = require('../models/socialConfig.model');
 const { sanitizeOptionalText } = require('../utils/input');
+const { subirImagen, eliminarImagen } = require('../utils/cloudinary');
 const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.use(adjuntarScopeLocal);
 router.use(requiereLocal);
@@ -71,6 +74,57 @@ router.put('/', async (req, res) => {
   }
 });
 
+router.put('/logo', upload.single('logo'), async (req, res) => {
+  try {
+    if (!['admin', 'superadmin'].includes(req.userRole)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const config = await obtenerConfig(req.localId);
+    const removeLogo = String(req.body?.remove_logo) === 'true';
+    const logoUrl = sanitizeOptionalText(req.body?.logo_url, { max: 300 }) || '';
+
+    if (logoUrl && !isValidUrl(logoUrl)) {
+      return res.status(400).json({ error: 'URL invalida para el logo' });
+    }
+
+    if (removeLogo) {
+      if (config.logo_cloudinary_id) {
+        await eliminarImagen(config.logo_cloudinary_id);
+      }
+      config.logo_cloudinary_id = '';
+      config.logo_url = '';
+    }
+
+    if (logoUrl) {
+      if (config.logo_cloudinary_id) {
+        await eliminarImagen(config.logo_cloudinary_id);
+      }
+      config.logo_cloudinary_id = '';
+      config.logo_url = logoUrl;
+    }
+
+    if (req.file) {
+      if (config.logo_cloudinary_id) {
+        await eliminarImagen(config.logo_cloudinary_id);
+      }
+      const subida = await subirImagen(req.file);
+      config.logo_url = subida.secure_url;
+      config.logo_cloudinary_id = subida.public_id;
+    }
+
+    config.actualizado_en = new Date();
+    const actualizado = await config.save();
+    res.json({
+      logo_url: actualizado.logo_url || '',
+      logo_cloudinary_id: actualizado.logo_cloudinary_id || '',
+      actualizado_en: actualizado.actualizado_en || null
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Error al guardar logo web cliente' });
+  }
+});
+
 router.get('/public', async (req, res) => {
   try {
     const config = await obtenerConfig(req.localId);
@@ -84,7 +138,11 @@ router.get('/public', async (req, res) => {
       };
     });
 
-    res.json({ socials, actualizado_en: config.actualizado_en || null });
+    res.json({
+      socials,
+      logo_url: config.logo_url || '',
+      actualizado_en: config.actualizado_en || null
+    });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener redes sociales' });
   }
