@@ -72,7 +72,9 @@ router.put('/', async (req, res) => {
       };
     });
 
-    config.horarios_web = normalizeWebSchedule(horariosInput);
+    if (Array.isArray(horariosInput)) {
+      config.horarios_web = normalizeWebSchedule(horariosInput);
+    }
     config.actualizado_en = new Date();
     const actualizado = await config.save();
     res.json(actualizado);
