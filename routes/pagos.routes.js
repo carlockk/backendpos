@@ -13,6 +13,7 @@ const router = express.Router();
 const CheckoutSession = require("../models/checkoutSession.model");
 const VentaCliente = require("../models/ventaCliente.model");
 const Cliente = require("../models/Cliente");
+const SocialConfig = require("../models/socialConfig.model");
 const { getJwtSecret } = require("../utils/jwtConfig");
 const {
   sanitizeText,
@@ -21,6 +22,7 @@ const {
   isValidEmail,
   toNumberOrNull,
 } = require("../utils/input");
+const { evaluateWebSchedule, normalizeWebSchedule, validatePickupTime } = require("../utils/webSchedule");
 
 const JWT_SECRET = getJwtSecret();
 
@@ -123,6 +125,15 @@ const getCheckoutResultUrl = () => {
   return url;
 };
 
+const normalizarTipoPedido = (raw) => {
+  const tipo = (sanitizeOptionalText(raw, { max: 30 }) || "").toLowerCase();
+  if (!tipo) return "tienda";
+  if (["delivery", "domicilio", "reparto", "reparto_domicilio"].includes(tipo)) return "delivery";
+  if (["retiro", "retiro_tienda", "pickup"].includes(tipo)) return "retiro";
+  if (["tienda", "local", "consumo_local"].includes(tipo)) return "tienda";
+  return tipo;
+};
+
 const isPagoAutorizado = (result) => {
   const status = String(result?.status || "").toUpperCase();
   const responseCode = Number(result?.response_code);
@@ -162,6 +173,7 @@ const crearVentaClienteDesdeCheckout = async (sessionId) => {
     total: pending.total,
     tipo_pago: pending.tipo_pago || "tarjeta_webpay",
     tipo_pedido: pending.tipo_pedido || "tienda",
+    hora_retiro: pending.hora_retiro || "",
     estado_pedido: "pendiente",
     historial_estados: [
       {
@@ -242,7 +254,8 @@ router.post("/crear-sesion", async (req, res) => {
       return res.status(400).json({ error: "Total invalido" });
     }
 
-    const tipoPedido = sanitizeOptionalText(order?.tipo_pedido, { max: 30 }) || "tienda";
+    const tipoPedido = normalizarTipoPedido(order?.tipo_pedido);
+    const horaRetiro = sanitizeOptionalText(order?.hora_retiro, { max: 5 }) || "";
     const clienteId = obtenerClienteIdDesdeToken(req);
     const cliente = clienteId ? await Cliente.findById(clienteId) : null;
     const emailCliente = normalizeEmail(cliente?.email || "");
@@ -251,6 +264,22 @@ router.post("/crear-sesion", async (req, res) => {
       : isValidEmail(emailCliente)
       ? emailCliente
       : "sin_correo";
+
+    const socialConfig = await SocialConfig.findOne({ local: localId });
+    const horariosWeb = normalizeWebSchedule(socialConfig?.horarios_web);
+    const estadoHorario = evaluateWebSchedule(horariosWeb, new Date());
+    if (estadoHorario.active && !estadoHorario.open) {
+      return res.status(400).json({ error: "El sitio esta cerrado por horario de atencion" });
+    }
+    if (tipoPedido === "retiro") {
+      if (!horaRetiro) {
+        return res.status(400).json({ error: "Debes indicar la hora de retiro" });
+      }
+      const validacionRetiro = validatePickupTime(horariosWeb, new Date().getDay(), horaRetiro);
+      if (!validacionRetiro.valid) {
+        return res.status(400).json({ error: validacionRetiro.error || "Hora de retiro fuera de horario" });
+      }
+    }
 
     const tx = getTransbankTx();
     const buyOrder = generarBuyOrder();
@@ -269,6 +298,7 @@ router.post("/crear-sesion", async (req, res) => {
       cliente_direccion: clienteDireccion,
       cliente_telefono: clienteTelefono,
       tipo_pedido: tipoPedido,
+      hora_retiro: tipoPedido === "retiro" ? horaRetiro : "",
       tipo_pago: "tarjeta_webpay",
       total: amount,
       productos: items,

@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const router = express.Router();
 const VentaCliente = require("../models/ventaCliente.model");
 const PedidoEstadoConfig = require("../models/pedidoEstadoConfig.model");
+const SocialConfig = require("../models/socialConfig.model");
 const Usuario = require("../models/usuario.model");
 const authMiddleware = require("../middlewares/auth");
 const Cliente = require("../models/Cliente");
@@ -16,6 +17,7 @@ const {
 } = require("../utils/input");
 const { adjuntarScopeLocal, requiereLocal } = require("../middlewares/localScope");
 const { getJwtSecret } = require("../utils/jwtConfig");
+const { evaluateWebSchedule, normalizeWebSchedule, validatePickupTime } = require("../utils/webSchedule");
 
 const JWT_SECRET = getJwtSecret();
 const DEFAULT_ESTADOS_PEDIDO = [
@@ -177,6 +179,7 @@ router.post("/", async (req, res) => {
     const total = toNumberOrNull(req.body.total);
     const tipoPago = sanitizeText(req.body.tipo_pago, { max: 30 });
     const tipoPedidoRaw = normalizarTipoPedido(req.body.tipo_pedido);
+    const horaRetiro = sanitizeOptionalText(req.body.hora_retiro, { max: 5 }) || "";
     const emailNormalizado = normalizeEmail(req.body.cliente_email);
     const clienteNombre = sanitizeOptionalText(req.body.cliente_nombre, { max: 120 }) || "";
     const clienteDireccion = sanitizeOptionalText(req.body.cliente_direccion, { max: 220 }) || "";
@@ -200,6 +203,22 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ msg: "Debes seleccionar un local" });
     }
 
+    const socialConfig = await SocialConfig.findOne({ local: localId });
+    const horariosWeb = normalizeWebSchedule(socialConfig?.horarios_web);
+    const estadoHorario = evaluateWebSchedule(horariosWeb, new Date());
+    if (estadoHorario.active && !estadoHorario.open) {
+      return res.status(400).json({ msg: "El sitio esta cerrado por horario de atencion" });
+    }
+    if (tipoPedidoRaw === "retiro") {
+      if (!horaRetiro) {
+        return res.status(400).json({ msg: "Debes indicar la hora de retiro" });
+      }
+      const validacionRetiro = validatePickupTime(horariosWeb, new Date().getDay(), horaRetiro);
+      if (!validacionRetiro.valid) {
+        return res.status(400).json({ msg: validacionRetiro.error || "Hora de retiro fuera de horario" });
+      }
+    }
+
     const emailClienteModel = normalizeEmail(cliente?.email || "");
     const emailFinal = isValidEmail(emailNormalizado)
       ? emailNormalizado
@@ -213,6 +232,7 @@ router.post("/", async (req, res) => {
       total,
       tipo_pago: tipoPago,
       tipo_pedido: tipoPedidoRaw || inferirTipoPedidoDesdeProductos(productos),
+      hora_retiro: tipoPedidoRaw === "retiro" ? horaRetiro : "",
       estado_pedido: "pendiente",
       historial_estados: [
         {
@@ -714,7 +734,7 @@ router.get("/public/:id", async (req, res) => {
     }
 
     const venta = await VentaCliente.findById(req.params.id).select(
-      "_id numero_pedido estado_pedido estado status fecha total tipo_pago tipo_pedido local cliente_nombre cliente_direccion cliente_telefono productos"
+      "_id numero_pedido estado_pedido estado status fecha total tipo_pago tipo_pedido hora_retiro local cliente_nombre cliente_direccion cliente_telefono productos"
     );
 
     if (!venta) {

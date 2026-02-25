@@ -10,6 +10,7 @@ const CheckoutSessionSchema = new mongoose.Schema(
     cliente_direccion: { type: String, default: "" },
     cliente_telefono: { type: String, default: "" },
     tipo_pedido: { type: String, default: "tienda" },
+    hora_retiro: { type: String, default: "" },
     tipo_pago: { type: String, default: "online" },
     total: { type: Number, required: true },
     productos: { type: Array, default: [] },

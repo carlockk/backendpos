@@ -5,6 +5,7 @@ const SocialConfig = require('../models/socialConfig.model');
 const Local = require('../models/local.model');
 const { sanitizeOptionalText } = require('../utils/input');
 const { subirImagen, eliminarImagen } = require('../utils/cloudinary');
+const { evaluateWebSchedule, normalizeWebSchedule } = require('../utils/webSchedule');
 const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const router = express.Router();
@@ -52,6 +53,9 @@ router.put('/', async (req, res) => {
 
     const config = await obtenerConfig(req.localId);
     const payload = req.body?.socials && typeof req.body.socials === 'object' ? req.body.socials : req.body;
+    const horariosInput = Array.isArray(req.body?.horarios_web)
+      ? req.body.horarios_web
+      : payload?.horarios_web;
 
     NETWORKS.forEach((key) => {
       const input = payload?.[key] || {};
@@ -68,6 +72,7 @@ router.put('/', async (req, res) => {
       };
     });
 
+    config.horarios_web = normalizeWebSchedule(horariosInput);
     config.actualizado_en = new Date();
     const actualizado = await config.save();
     res.json(actualizado);
@@ -178,6 +183,7 @@ router.post('/clonar', async (req, res) => {
             url: entry.url || ''
           };
         });
+        destino.horarios_web = normalizeWebSchedule(origen?.horarios_web);
 
         // Se copia URL del logo para evitar eliminar recursos cloudinary compartidos.
         destino.logo_url = origen.logo_url || '';
@@ -200,6 +206,8 @@ router.get('/public', async (req, res) => {
   try {
     const config = await obtenerConfig(req.localId);
     const socials = {};
+    const horarios = normalizeWebSchedule(config?.horarios_web);
+    const horarioEstado = evaluateWebSchedule(horarios, new Date());
 
     NETWORKS.forEach((key) => {
       const entry = config?.[key] || emptySocial();
@@ -212,6 +220,9 @@ router.get('/public', async (req, res) => {
     res.json({
       socials,
       logo_url: config.logo_url || '',
+      horarios_web: horarios,
+      horario_web_activo: horarioEstado.active,
+      abierto_ahora: horarioEstado.open,
       actualizado_en: config.actualizado_en || null
     });
   } catch (error) {

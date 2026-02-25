@@ -29,6 +29,7 @@ const VentaClienteSchema = new mongoose.Schema({
   total: Number,
   tipo_pago: String,
   tipo_pedido: { type: String, default: "tienda" },
+  hora_retiro: { type: String, default: "" },
   estado_pedido: { type: String, default: "pendiente" },
   historial_estados: [
     {
