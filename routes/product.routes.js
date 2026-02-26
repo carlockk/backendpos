@@ -23,6 +23,78 @@ const isValidHttpUrl = (value) => {
   }
 };
 
+const extractOgImageUrl = (html = '') => {
+  const patterns = [
+    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["'][^>]*>/i
+  ];
+  for (const pattern of patterns) {
+    const match = String(html).match(pattern);
+    if (match?.[1]) return match[1].replace(/&amp;/g, '&').trim();
+  }
+  return '';
+};
+
+const fetchImageBufferFromUrl = async (targetUrl) => {
+  const response = await fetch(targetUrl, {
+    redirect: 'follow',
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      Accept: 'image/*,text/html;q=0.9,*/*;q=0.8'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error('No se pudo descargar la imagen desde la URL');
+  }
+
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  if (contentType.startsWith('image/')) {
+    const arrayBuffer = await response.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      mimetype: contentType.split(';')[0] || 'image/jpeg'
+    };
+  }
+
+  if (contentType.includes('text/html')) {
+    const html = await response.text();
+    const ogImageRaw = extractOgImageUrl(html);
+    if (!ogImageRaw) {
+      throw new Error('La URL no contiene una imagen usable');
+    }
+    const ogImageUrl = new URL(ogImageRaw, targetUrl).toString();
+    if (!isValidHttpUrl(ogImageUrl)) {
+      throw new Error('No se pudo obtener una imagen válida desde la URL');
+    }
+
+    const imageResponse = await fetch(ogImageUrl, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        Accept: 'image/*,*/*;q=0.8'
+      }
+    });
+
+    if (!imageResponse.ok) {
+      throw new Error('No se pudo descargar la imagen del enlace compartido');
+    }
+    const ogContentType = String(imageResponse.headers.get('content-type') || '').toLowerCase();
+    if (!ogContentType.startsWith('image/')) {
+      throw new Error('El enlace compartido no apunta a una imagen');
+    }
+    const ogArrayBuffer = await imageResponse.arrayBuffer();
+    return {
+      buffer: Buffer.from(ogArrayBuffer),
+      mimetype: ogContentType.split(';')[0] || 'image/jpeg'
+    };
+  }
+
+  throw new Error('La URL no corresponde a una imagen');
+};
+
 const normalizeCategoriaId = (raw) => {
   if (raw === undefined || raw === null) return null;
   if (typeof raw === 'string') {
@@ -327,7 +399,14 @@ router.post('/', upload.single('imagen'), async (req, res) => {
       if (imagenUrlBody && !isValidHttpUrl(imagenUrlBody)) {
         throw new Error('La URL de imagen es invalida');
       }
-      imagen_url = imagenUrlBody;
+      if (imagenUrlBody) {
+        const remoteFile = await fetchImageBufferFromUrl(imagenUrlBody);
+        const subida = await subirImagen(remoteFile);
+        imagen_url = subida.secure_url;
+        cloudinary_id = subida.public_id;
+      } else {
+        imagen_url = '';
+      }
     }
 
     const nombre = sanitizeText(req.body.nombre, { max: 120 });
@@ -445,11 +524,22 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         if (imagenUrlBody && !isValidHttpUrl(imagenUrlBody)) {
           throw new Error('La URL de imagen es invalida');
         }
-        if (cloudinary_id) {
-          await eliminarImagen(cloudinary_id);
-          cloudinary_id = '';
+        if (!imagenUrlBody) {
+          if (cloudinary_id) {
+            await eliminarImagen(cloudinary_id);
+            cloudinary_id = '';
+          }
+          imagen_url = '';
+        } else {
+          const remoteFile = await fetchImageBufferFromUrl(imagenUrlBody);
+          const subida = await subirImagen(remoteFile);
+          const cloudinaryAnterior = cloudinary_id;
+          imagen_url = subida.secure_url;
+          cloudinary_id = subida.public_id;
+          if (cloudinaryAnterior) {
+            await eliminarImagen(cloudinaryAnterior);
+          }
         }
-        imagen_url = imagenUrlBody;
       }
 
       const nombre = sanitizeText(req.body.nombre, { max: 120 });
