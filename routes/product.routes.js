@@ -14,6 +14,15 @@ const upload = multer({ storage: multer.memoryStorage() }); // Guarda la imagen 
 router.use(adjuntarScopeLocal);
 router.use(requiereLocal);
 
+const isValidHttpUrl = (value) => {
+  try {
+    const parsed = new URL(String(value));
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 const normalizeCategoriaId = (raw) => {
   if (raw === undefined || raw === null) return null;
   if (typeof raw === 'string') {
@@ -308,11 +317,17 @@ router.post('/', upload.single('imagen'), async (req, res) => {
   try {
     let imagen_url = '';
     let cloudinary_id = '';
+    const imagenUrlBody = sanitizeOptionalText(req.body.imagen_url, { max: 600 }) || '';
 
     if (req.file) {
       const subida = await subirImagen(req.file);
       imagen_url = subida.secure_url;
       cloudinary_id = subida.public_id;
+    } else if (req.body.imagen_url !== undefined) {
+      if (imagenUrlBody && !isValidHttpUrl(imagenUrlBody)) {
+        throw new Error('La URL de imagen es invalida');
+      }
+      imagen_url = imagenUrlBody;
     }
 
     const nombre = sanitizeText(req.body.nombre, { max: 120 });
@@ -419,12 +434,22 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
     if (productoLocal) {
       let imagen_url = productoLocal.productoBase?.imagen_url || '';
       let cloudinary_id = productoLocal.productoBase?.cloudinary_id || '';
+      const imagenUrlBody = sanitizeOptionalText(req.body.imagen_url, { max: 600 }) || '';
 
       if (req.file) {
         if (cloudinary_id) await eliminarImagen(cloudinary_id);
         const subida = await subirImagen(req.file);
         imagen_url = subida.secure_url;
         cloudinary_id = subida.public_id;
+      } else if (req.body.imagen_url !== undefined) {
+        if (imagenUrlBody && !isValidHttpUrl(imagenUrlBody)) {
+          throw new Error('La URL de imagen es invalida');
+        }
+        if (cloudinary_id) {
+          await eliminarImagen(cloudinary_id);
+          cloudinary_id = '';
+        }
+        imagen_url = imagenUrlBody;
       }
 
       const nombre = sanitizeText(req.body.nombre, { max: 120 });
