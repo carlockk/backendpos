@@ -23,16 +23,77 @@ const isValidHttpUrl = (value) => {
   }
 };
 
-const extractOgImageUrl = (html = '') => {
-  const patterns = [
-    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["'][^>]*>/i
-  ];
-  for (const pattern of patterns) {
-    const match = String(html).match(pattern);
-    if (match?.[1]) return match[1].replace(/&amp;/g, '&').trim();
+const decodeHtmlEntities = (value = '') =>
+  String(value)
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+const extractImageFromLdJson = (html = '') => {
+  const scripts = String(html).match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
+  for (const script of scripts) {
+    const content = script
+      .replace(/^<script[^>]*>/i, '')
+      .replace(/<\/script>$/i, '')
+      .trim();
+    if (!content) continue;
+    try {
+      const parsed = JSON.parse(content);
+      const queue = Array.isArray(parsed) ? [...parsed] : [parsed];
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (!item || typeof item !== 'object') continue;
+
+        const image = item.image;
+        if (typeof image === 'string' && isValidHttpUrl(image)) {
+          return image;
+        }
+        if (Array.isArray(image)) {
+          const firstString = image.find((entry) => typeof entry === 'string' && isValidHttpUrl(entry));
+          if (firstString) return firstString;
+          image.forEach((entry) => {
+            if (entry && typeof entry === 'object') queue.push(entry);
+          });
+        } else if (image && typeof image === 'object') {
+          if (typeof image.url === 'string' && isValidHttpUrl(image.url)) {
+            return image.url;
+          }
+          queue.push(image);
+        }
+
+        Object.values(item).forEach((value) => {
+          if (value && typeof value === 'object') queue.push(value);
+        });
+      }
+    } catch {
+      // Ignora bloques JSON-LD inválidos.
+    }
   }
   return '';
+};
+
+const extractImageUrlFromHtml = (html = '') => {
+  const source = String(html);
+  const metaRegex = /<meta[^>]+(?:property|name)=["']([^"']+)["'][^>]+content=["']([^"']+)["'][^>]*>/gi;
+  const metaRegexAlt = /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']([^"']+)["'][^>]*>/gi;
+  const acceptedKeys = new Set(['og:image', 'og:image:secure_url', 'twitter:image', 'twitter:image:src']);
+
+  let match;
+  while ((match = metaRegex.exec(source)) !== null) {
+    const key = String(match[1] || '').toLowerCase().trim();
+    const value = decodeHtmlEntities(match[2] || '').trim();
+    if (acceptedKeys.has(key) && value) return value;
+  }
+
+  while ((match = metaRegexAlt.exec(source)) !== null) {
+    const value = decodeHtmlEntities(match[1] || '').trim();
+    const key = String(match[2] || '').toLowerCase().trim();
+    if (acceptedKeys.has(key) && value) return value;
+  }
+
+  return extractImageFromLdJson(source);
 };
 
 const fetchImageBufferFromUrl = async (targetUrl) => {
@@ -60,9 +121,11 @@ const fetchImageBufferFromUrl = async (targetUrl) => {
 
   if (contentType.includes('text/html')) {
     const html = await response.text();
-    const ogImageRaw = extractOgImageUrl(html);
+    const ogImageRaw = extractImageUrlFromHtml(html);
     if (!ogImageRaw) {
-      throw new Error('La URL no contiene una imagen usable');
+      throw new Error(
+        'No se pudo extraer una imagen del enlace. Si es Instagram, usa una URL directa de imagen o sube el archivo.'
+      );
     }
     const ogImageUrl = new URL(ogImageRaw, targetUrl).toString();
     if (!isValidHttpUrl(ogImageUrl)) {
