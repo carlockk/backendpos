@@ -33,6 +33,29 @@ const parseObjectIdArray = (raw) => {
   );
 };
 
+const resolveGroupIds = async ({ localId, grupoRaw, gruposRaw }) => {
+  const gruposFromArray = parseObjectIdArray(gruposRaw);
+  const grupoSingle =
+    grupoRaw && mongoose.Types.ObjectId.isValid(String(grupoRaw)) ? String(grupoRaw) : null;
+  const ids = Array.from(new Set([...(gruposFromArray || []), ...(grupoSingle ? [grupoSingle] : [])]));
+
+  if (ids.length === 0) {
+    return { gruposIds: [], grupoPrincipal: null };
+  }
+
+  const gruposValidos = await AgregadoGrupo.find(
+    { _id: { $in: ids }, local: localId },
+    '_id'
+  ).lean();
+  const gruposIds = gruposValidos.map((g) => String(g._id));
+  if (gruposIds.length === 0) {
+    return { gruposIds: [], grupoPrincipal: null };
+  }
+
+  const grupoPrincipal = grupoSingle && gruposIds.includes(grupoSingle) ? grupoSingle : gruposIds[0];
+  return { gruposIds, grupoPrincipal };
+};
+
 const normalizeModoSeleccion = (raw, fallback = 'multiple') => {
   if (raw === undefined || raw === null || String(raw).trim() === '') return fallback;
   const value = String(raw).trim().toLowerCase();
@@ -134,6 +157,10 @@ router.delete('/grupos/:id', async (req, res) => {
       { local: req.localId, grupo: grupo._id },
       { $set: { grupo: null, actualizado_en: new Date() } }
     );
+    await Agregado.updateMany(
+      { local: req.localId, grupos: grupo._id },
+      { $pull: { grupos: grupo._id }, $set: { actualizado_en: new Date() } }
+    );
     await grupo.deleteOne();
     res.json({ mensaje: 'Grupo eliminado' });
   } catch (error) {
@@ -145,6 +172,7 @@ router.get('/', async (req, res) => {
   try {
     const agregados = await Agregado.find({ local: req.localId })
       .populate('grupo', 'categoriaPrincipal titulo modoSeleccion')
+      .populate('grupos', 'categoriaPrincipal titulo modoSeleccion')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',
@@ -162,7 +190,7 @@ router.get('/opciones', async (req, res) => {
   try {
     const [grupos, agregados] = await Promise.all([
       AgregadoGrupo.find({ local: req.localId, activo: true }).sort({ titulo: 1 }).lean(),
-      Agregado.find({ local: req.localId, activo: true }, 'nombre grupo precio').sort({ nombre: 1 }).lean()
+      Agregado.find({ local: req.localId, activo: true }, 'nombre grupo grupos precio').sort({ nombre: 1 }).lean()
     ]);
     res.json({ grupos, agregados });
   } catch (error) {
@@ -179,6 +207,7 @@ router.post('/', async (req, res) => {
     const descripcion = sanitizeOptionalText(req.body?.descripcion, { max: 300 }) || '';
     const precioRaw = req.body?.precio;
     const grupoIdRaw = req.body?.grupo;
+    const gruposIdRaw = req.body?.grupos;
     const categoriasRaw = parseObjectIdArray(req.body?.categorias);
     const productosRaw = parseObjectIdArray(req.body?.productos);
 
@@ -193,15 +222,11 @@ router.post('/', async (req, res) => {
       precio = parsed;
     }
 
-    let grupoId = null;
-    if (grupoIdRaw && String(grupoIdRaw).trim() !== '') {
-      if (!mongoose.Types.ObjectId.isValid(grupoIdRaw)) {
-        return res.status(400).json({ error: 'Grupo invalido' });
-      }
-      const grupoExiste = await AgregadoGrupo.findOne({ _id: grupoIdRaw, local: req.localId });
-      if (!grupoExiste) return res.status(400).json({ error: 'Grupo invalido' });
-      grupoId = grupoExiste._id;
-    }
+    const { gruposIds, grupoPrincipal } = await resolveGroupIds({
+      localId: req.localId,
+      grupoRaw: grupoIdRaw,
+      gruposRaw: gruposIdRaw
+    });
 
     const [categoriasValidas, productosValidos] = await Promise.all([
       Categoria.find({ _id: { $in: categoriasRaw }, local: req.localId }, '_id').lean(),
@@ -212,7 +237,8 @@ router.post('/', async (req, res) => {
       nombre,
       descripcion,
       precio,
-      grupo: grupoId,
+      grupo: grupoPrincipal,
+      grupos: gruposIds,
       categorias: categoriasValidas.map((c) => c._id),
       productos: productosValidos.map((p) => p._id),
       local: req.localId,
@@ -221,6 +247,7 @@ router.post('/', async (req, res) => {
 
     const poblado = await Agregado.findById(agregado._id)
       .populate('grupo', 'categoriaPrincipal titulo modoSeleccion')
+      .populate('grupos', 'categoriaPrincipal titulo modoSeleccion')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',
@@ -257,6 +284,7 @@ router.post('/clonar', async (req, res) => {
     if (clonarTodas) {
       origen = await Agregado.find({ local: sourceLocalId })
         .populate('grupo', 'categoriaPrincipal titulo descripcion modoSeleccion')
+        .populate('grupos', 'categoriaPrincipal titulo descripcion modoSeleccion')
         .lean();
       if (origen.length === 0) {
         return res.status(400).json({ error: 'No hay agregados para clonar' });
@@ -264,6 +292,7 @@ router.post('/clonar', async (req, res) => {
     } else {
       const agregado = await Agregado.findOne({ _id: agregadoId, local: sourceLocalId })
         .populate('grupo', 'categoriaPrincipal titulo descripcion modoSeleccion')
+        .populate('grupos', 'categoriaPrincipal titulo descripcion modoSeleccion')
         .lean();
       if (!agregado) {
         return res.status(404).json({ error: 'Agregado origen no encontrado' });
@@ -285,8 +314,14 @@ router.post('/clonar', async (req, res) => {
     const gruposOrigen = Array.from(
       new Map(
         origen
-          .filter((a) => a?.grupo?.titulo)
-          .map((a) => [String(a.grupo.titulo).trim(), a.grupo])
+          .flatMap((a) => {
+            const lista = Array.isArray(a?.grupos) && a.grupos.length > 0
+              ? a.grupos
+              : (a?.grupo ? [a.grupo] : []);
+            return lista
+              .filter((g) => g?.titulo)
+              .map((g) => [String(g.titulo).trim(), g]);
+          })
       ).values()
     );
     const titulosGrupo = gruposOrigen
@@ -322,14 +357,22 @@ router.post('/clonar', async (req, res) => {
     const docs = origen.map((a) => {
       const nombre = sanitizeText(a?.nombre, { max: 120 });
       const descripcion = sanitizeOptionalText(a?.descripcion, { max: 300 }) || '';
-      const grupoTitulo = sanitizeText(a?.grupo?.titulo, { max: 100 });
-      const grupoId = grupoTitulo ? grupoPorTitulo.get(grupoTitulo.toLowerCase()) || null : null;
+      const gruposFuente = Array.isArray(a?.grupos) && a.grupos.length > 0
+        ? a.grupos
+        : (a?.grupo ? [a.grupo] : []);
+      const gruposIds = gruposFuente
+        .map((g) => sanitizeText(g?.titulo, { max: 100 }))
+        .filter(Boolean)
+        .map((titulo) => grupoPorTitulo.get(titulo.toLowerCase()) || null)
+        .filter(Boolean);
+      const grupoId = gruposIds[0] || null;
       const precio = Number.isFinite(Number(a?.precio)) ? Number(a.precio) : null;
       return {
         nombre,
         descripcion,
         precio,
         grupo: grupoId,
+        grupos: gruposIds,
         categorias: [],
         productos: [],
         local: req.localId,
@@ -361,6 +404,7 @@ router.put('/:id', async (req, res) => {
     const descripcion = sanitizeOptionalText(req.body?.descripcion, { max: 300 }) || '';
     const precioRaw = req.body?.precio;
     const grupoIdRaw = req.body?.grupo;
+    const gruposIdRaw = req.body?.grupos;
     const categoriasRaw = parseObjectIdArray(req.body?.categorias);
     const productosRaw = parseObjectIdArray(req.body?.productos);
 
@@ -375,15 +419,11 @@ router.put('/:id', async (req, res) => {
       precio = parsed;
     }
 
-    let grupoId = null;
-    if (grupoIdRaw && String(grupoIdRaw).trim() !== '') {
-      if (!mongoose.Types.ObjectId.isValid(grupoIdRaw)) {
-        return res.status(400).json({ error: 'Grupo invalido' });
-      }
-      const grupoExiste = await AgregadoGrupo.findOne({ _id: grupoIdRaw, local: req.localId });
-      if (!grupoExiste) return res.status(400).json({ error: 'Grupo invalido' });
-      grupoId = grupoExiste._id;
-    }
+    const { gruposIds, grupoPrincipal } = await resolveGroupIds({
+      localId: req.localId,
+      grupoRaw: grupoIdRaw,
+      gruposRaw: gruposIdRaw
+    });
 
     const [categoriasValidas, productosValidos] = await Promise.all([
       Categoria.find({ _id: { $in: categoriasRaw }, local: req.localId }, '_id').lean(),
@@ -393,7 +433,8 @@ router.put('/:id', async (req, res) => {
     agregado.nombre = nombre;
     agregado.descripcion = descripcion;
     agregado.precio = precio;
-    agregado.grupo = grupoId;
+    agregado.grupo = grupoPrincipal;
+    agregado.grupos = gruposIds;
     agregado.categorias = categoriasValidas.map((c) => c._id);
     agregado.productos = productosValidos.map((p) => p._id);
     agregado.actualizado_en = new Date();
@@ -401,6 +442,7 @@ router.put('/:id', async (req, res) => {
 
     const poblado = await Agregado.findById(agregado._id)
       .populate('grupo', 'categoriaPrincipal titulo modoSeleccion')
+      .populate('grupos', 'categoriaPrincipal titulo modoSeleccion')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',

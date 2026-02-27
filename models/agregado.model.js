@@ -5,6 +5,7 @@ const agregadoSchema = new mongoose.Schema({
   descripcion: { type: String, trim: true, default: '' },
   precio: { type: Number, default: null },
   grupo: { type: mongoose.Schema.Types.ObjectId, ref: 'AgregadoGrupo', default: null },
+  grupos: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AgregadoGrupo' }],
   categorias: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Categoria' }],
   productos: [{ type: mongoose.Schema.Types.ObjectId, ref: 'ProductoLocal' }],
   local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', required: true },
