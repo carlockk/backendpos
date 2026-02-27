@@ -33,6 +33,13 @@ const parseObjectIdArray = (raw) => {
   );
 };
 
+const normalizeModoSeleccion = (raw, fallback = 'multiple') => {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return fallback;
+  const value = String(raw).trim().toLowerCase();
+  if (value === 'multiple' || value === 'unico') return value;
+  return null;
+};
+
 router.get('/grupos', async (req, res) => {
   try {
     const grupos = await AgregadoGrupo.find({ local: req.localId }).sort({ titulo: 1 });
@@ -49,7 +56,9 @@ router.post('/grupos', async (req, res) => {
     }
     const titulo = sanitizeText(req.body?.titulo, { max: 100 });
     const descripcion = sanitizeOptionalText(req.body?.descripcion, { max: 300 }) || '';
+    const modoSeleccion = normalizeModoSeleccion(req.body?.modoSeleccion, 'multiple');
     if (!titulo) return res.status(400).json({ error: 'El titulo es obligatorio' });
+    if (!modoSeleccion) return res.status(400).json({ error: 'Modo de seleccion invalido' });
 
     const existe = await AgregadoGrupo.findOne({ local: req.localId, titulo });
     if (existe) return res.status(400).json({ error: 'Ya existe un grupo con ese titulo' });
@@ -57,6 +66,7 @@ router.post('/grupos', async (req, res) => {
     const grupo = await AgregadoGrupo.create({
       titulo,
       descripcion,
+      modoSeleccion,
       local: req.localId,
       actualizado_en: new Date()
     });
@@ -88,8 +98,15 @@ router.put('/grupos/:id', async (req, res) => {
     });
     if (existe) return res.status(400).json({ error: 'Ya existe un grupo con ese titulo' });
 
+    const modoSeleccion = normalizeModoSeleccion(
+      req.body?.modoSeleccion,
+      grupo.modoSeleccion || 'multiple'
+    );
+    if (!modoSeleccion) return res.status(400).json({ error: 'Modo de seleccion invalido' });
+
     grupo.titulo = titulo;
     grupo.descripcion = descripcion;
+    grupo.modoSeleccion = modoSeleccion;
     grupo.actualizado_en = new Date();
     await grupo.save();
     res.json(grupo);
@@ -123,7 +140,7 @@ router.delete('/grupos/:id', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const agregados = await Agregado.find({ local: req.localId })
-      .populate('grupo', 'titulo')
+      .populate('grupo', 'titulo modoSeleccion')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',
@@ -199,7 +216,7 @@ router.post('/', async (req, res) => {
     });
 
     const poblado = await Agregado.findById(agregado._id)
-      .populate('grupo', 'titulo')
+      .populate('grupo', 'titulo modoSeleccion')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',
@@ -235,14 +252,14 @@ router.post('/clonar', async (req, res) => {
     let origen = [];
     if (clonarTodas) {
       origen = await Agregado.find({ local: sourceLocalId })
-        .populate('grupo', 'titulo descripcion')
+        .populate('grupo', 'titulo descripcion modoSeleccion')
         .lean();
       if (origen.length === 0) {
         return res.status(400).json({ error: 'No hay agregados para clonar' });
       }
     } else {
       const agregado = await Agregado.findOne({ _id: agregadoId, local: sourceLocalId })
-        .populate('grupo', 'titulo descripcion')
+        .populate('grupo', 'titulo descripcion modoSeleccion')
         .lean();
       if (!agregado) {
         return res.status(404).json({ error: 'Agregado origen no encontrado' });
@@ -288,6 +305,7 @@ router.post('/clonar', async (req, res) => {
       const creado = await AgregadoGrupo.create({
         titulo,
         descripcion: sanitizeOptionalText(grupo?.descripcion, { max: 300 }) || '',
+        modoSeleccion: normalizeModoSeleccion(grupo?.modoSeleccion, 'multiple') || 'multiple',
         local: req.localId,
         actualizado_en: new Date()
       });
@@ -376,7 +394,7 @@ router.put('/:id', async (req, res) => {
     await agregado.save();
 
     const poblado = await Agregado.findById(agregado._id)
-      .populate('grupo', 'titulo')
+      .populate('grupo', 'titulo modoSeleccion')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',
