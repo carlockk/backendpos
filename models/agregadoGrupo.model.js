@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const agregadoGrupoSchema = new mongoose.Schema({
+  categoriaPrincipal: { type: String, trim: true, default: '' },
   titulo: { type: String, required: true, trim: true },
   descripcion: { type: String, trim: true, default: '' },
   modoSeleccion: { type: String, enum: ['multiple', 'unico'], default: 'multiple' },

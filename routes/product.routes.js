@@ -416,7 +416,7 @@ router.get('/', async (_req, res) => {
       .populate({
         path: 'agregados',
         select: 'nombre precio activo grupo',
-        populate: { path: 'grupo', select: 'titulo modoSeleccion' }
+        populate: { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion' }
       })
       .sort({ creado_en: -1 });
 
@@ -437,7 +437,7 @@ router.get('/:id', async (req, res) => {
     }).populate({
       path: 'agregados',
       select: 'nombre precio activo grupo',
-      populate: { path: 'grupo', select: 'titulo modoSeleccion' }
+      populate: { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion' }
     });
     if (productoLocal) {
       return res.json(proyectarProductoLocal(productoLocal));
@@ -555,7 +555,7 @@ router.post('/', upload.single('imagen'), async (req, res) => {
       {
         path: 'agregados',
         select: 'nombre precio activo grupo',
-        populate: { path: 'grupo', select: 'titulo modoSeleccion' }
+        populate: { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion' }
       }
     ]);
 
@@ -694,7 +694,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         {
           path: 'agregados',
           select: 'nombre precio activo grupo',
-          populate: { path: 'grupo', select: 'titulo modoSeleccion' }
+          populate: { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion' }
         }
       ]);
       return res.json(proyectarProductoLocal(poblado));

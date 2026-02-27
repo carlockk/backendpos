@@ -55,6 +55,7 @@ router.post('/grupos', async (req, res) => {
       return res.status(403).json({ error: 'No autorizado' });
     }
     const titulo = sanitizeText(req.body?.titulo, { max: 100 });
+    const categoriaPrincipal = sanitizeOptionalText(req.body?.categoriaPrincipal, { max: 100 }) || '';
     const descripcion = sanitizeOptionalText(req.body?.descripcion, { max: 300 }) || '';
     const modoSeleccion = normalizeModoSeleccion(req.body?.modoSeleccion, 'multiple');
     if (!titulo) return res.status(400).json({ error: 'El titulo es obligatorio' });
@@ -64,6 +65,7 @@ router.post('/grupos', async (req, res) => {
     if (existe) return res.status(400).json({ error: 'Ya existe un grupo con ese titulo' });
 
     const grupo = await AgregadoGrupo.create({
+      categoriaPrincipal,
       titulo,
       descripcion,
       modoSeleccion,
@@ -82,6 +84,7 @@ router.put('/grupos/:id', async (req, res) => {
       return res.status(403).json({ error: 'No autorizado' });
     }
     const titulo = sanitizeText(req.body?.titulo, { max: 100 });
+    const categoriaPrincipal = sanitizeOptionalText(req.body?.categoriaPrincipal, { max: 100 }) || '';
     const descripcion = sanitizeOptionalText(req.body?.descripcion, { max: 300 }) || '';
     if (!titulo) return res.status(400).json({ error: 'El titulo es obligatorio' });
 
@@ -105,6 +108,7 @@ router.put('/grupos/:id', async (req, res) => {
     if (!modoSeleccion) return res.status(400).json({ error: 'Modo de seleccion invalido' });
 
     grupo.titulo = titulo;
+    grupo.categoriaPrincipal = categoriaPrincipal;
     grupo.descripcion = descripcion;
     grupo.modoSeleccion = modoSeleccion;
     grupo.actualizado_en = new Date();
@@ -140,7 +144,7 @@ router.delete('/grupos/:id', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const agregados = await Agregado.find({ local: req.localId })
-      .populate('grupo', 'titulo modoSeleccion')
+      .populate('grupo', 'categoriaPrincipal titulo modoSeleccion')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',
@@ -216,7 +220,7 @@ router.post('/', async (req, res) => {
     });
 
     const poblado = await Agregado.findById(agregado._id)
-      .populate('grupo', 'titulo modoSeleccion')
+      .populate('grupo', 'categoriaPrincipal titulo modoSeleccion')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',
@@ -252,14 +256,14 @@ router.post('/clonar', async (req, res) => {
     let origen = [];
     if (clonarTodas) {
       origen = await Agregado.find({ local: sourceLocalId })
-        .populate('grupo', 'titulo descripcion modoSeleccion')
+        .populate('grupo', 'categoriaPrincipal titulo descripcion modoSeleccion')
         .lean();
       if (origen.length === 0) {
         return res.status(400).json({ error: 'No hay agregados para clonar' });
       }
     } else {
       const agregado = await Agregado.findOne({ _id: agregadoId, local: sourceLocalId })
-        .populate('grupo', 'titulo descripcion modoSeleccion')
+        .populate('grupo', 'categoriaPrincipal titulo descripcion modoSeleccion')
         .lean();
       if (!agregado) {
         return res.status(404).json({ error: 'Agregado origen no encontrado' });
@@ -303,6 +307,8 @@ router.post('/clonar', async (req, res) => {
       const key = titulo.toLowerCase();
       if (grupoPorTitulo.has(key)) continue;
       const creado = await AgregadoGrupo.create({
+        categoriaPrincipal:
+          sanitizeOptionalText(grupo?.categoriaPrincipal, { max: 100 }) || '',
         titulo,
         descripcion: sanitizeOptionalText(grupo?.descripcion, { max: 300 }) || '',
         modoSeleccion: normalizeModoSeleccion(grupo?.modoSeleccion, 'multiple') || 'multiple',
@@ -394,7 +400,7 @@ router.put('/:id', async (req, res) => {
     await agregado.save();
 
     const poblado = await Agregado.findById(agregado._id)
-      .populate('grupo', 'titulo modoSeleccion')
+      .populate('grupo', 'categoriaPrincipal titulo modoSeleccion')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',
