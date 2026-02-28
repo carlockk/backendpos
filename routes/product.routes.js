@@ -508,15 +508,18 @@ router.post('/', upload.single('imagen'), async (req, res) => {
       }
     }
 
-    const filtroAgregados = {
-      local: req.localId,
-      activo: true,
-      $or: [{ _id: { $in: agregadosRaw } }]
-    };
-    if (categoriaId) {
-      filtroAgregados.$or.push({ categorias: categoriaId });
+    let agregadosValidos = [];
+    if (agregadosRaw.length > 0) {
+      agregadosValidos = await Agregado.find(
+        { local: req.localId, activo: true, _id: { $in: agregadosRaw } },
+        '_id'
+      ).lean();
+    } else if (categoriaId) {
+      agregadosValidos = await Agregado.find(
+        { local: req.localId, activo: true, categorias: categoriaId },
+        '_id'
+      ).lean();
     }
-    const agregadosValidos = await Agregado.find(filtroAgregados, '_id').lean();
 
     const base = new ProductoBase({
       nombre,
@@ -670,15 +673,18 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         }
       }
 
-      const filtroAgregados = {
-        local: req.localId,
-        activo: true,
-        $or: [{ _id: { $in: agregadosRaw } }]
-      };
-      if (categoriaId) {
-        filtroAgregados.$or.push({ categorias: categoriaId });
+      let agregadosValidos = [];
+      if (agregadosRaw.length > 0) {
+        agregadosValidos = await Agregado.find(
+          { local: req.localId, activo: true, _id: { $in: agregadosRaw } },
+          '_id'
+        ).lean();
+      } else if (categoriaId) {
+        agregadosValidos = await Agregado.find(
+          { local: req.localId, activo: true, categorias: categoriaId },
+          '_id'
+        ).lean();
       }
-      const agregadosValidos = await Agregado.find(filtroAgregados, '_id').lean();
 
       if (productoLocal.productoBase) {
         productoLocal.productoBase.nombre = nombre;
