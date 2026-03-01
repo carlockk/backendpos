@@ -218,11 +218,13 @@ const normalizarVariantes = (raw) => {
 
       const stockRaw =
         variant.stock === '' || variant.stock === null || variant.stock === undefined
-          ? 0
+          ? null
           : Number(variant.stock);
-      if (Number.isNaN(stockRaw) || stockRaw < 0) {
+      if (stockRaw !== null && (Number.isNaN(stockRaw) || stockRaw < 0)) {
         throw new Error(`El stock de la variante "${nombre}" es inválido`);
       }
+      const stock = stockRaw !== null && stockRaw > 0 ? stockRaw : null;
+      const agotado = variant.agotado === true || String(variant.agotado) === 'true';
 
       return {
         _id: variant._id && String(variant._id).length ? variant._id : undefined,
@@ -234,7 +236,8 @@ const normalizarVariantes = (raw) => {
         color: sanitizeOptionalText(variant.color, { max: 40 }) || undefined,
         talla: sanitizeOptionalText(variant.talla, { max: 40 }) || undefined,
         precio: precio !== undefined ? precio : undefined,
-        stock: stockRaw,
+        stock,
+        agotado,
         sku: sanitizeOptionalText(variant.sku, { max: 40 }) || undefined
       };
     })
@@ -262,7 +265,11 @@ const parseObjectIdArray = (raw) => {
 
 const calcularStockTotal = (variantes, stockBase) => {
   if (Array.isArray(variantes) && variantes.length > 0) {
-    return variantes.reduce((acc, variante) => acc + (variante.stock || 0), 0);
+    const stocks = variantes
+      .map((vari) => Number(vari?.stock))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (stocks.length === 0) return null;
+    return stocks.reduce((acc, val) => acc + val, 0);
   }
   return stockBase;
 };
@@ -387,6 +394,7 @@ router.post('/local/use-base/:baseId', async (req, res) => {
       talla: v.talla,
       precio: v.precio,
       stock: v.stock,
+      agotado: v.agotado,
       sku: v.sku
     }));
     const stockCalculado = calcularStockTotal(variantesLocal, stockBase);
@@ -544,6 +552,7 @@ router.post('/', upload.single('imagen'), async (req, res) => {
       talla: v.talla,
       precio: v.precio,
       stock: v.stock,
+      agotado: v.agotado,
       sku: v.sku
     }));
 
@@ -659,6 +668,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         talla: v.talla,
         precio: v.precio,
         stock: v.stock,
+        agotado: v.agotado,
         sku: v.sku
       }));
       const stockCalculado = calcularStockTotal(variantes, stockBase);

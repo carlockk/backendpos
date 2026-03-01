@@ -10,7 +10,8 @@ const varianteLocalSchema = new mongoose.Schema(
     color: { type: String, trim: true },
     talla: { type: String, trim: true },
     precio: { type: Number },
-    stock: { type: Number, default: 0 },
+    stock: { type: Number, default: null },
+    agotado: { type: Boolean, default: false },
     sku: { type: String, trim: true }
   },
   { _id: true }
@@ -48,7 +49,7 @@ productLocalSchema.virtual('stock_total').get(function () {
     const stocks = this.variantes
       .map((vari) => {
         const valor = Number(vari.stock);
-        return Number.isFinite(valor) ? valor : null;
+        return Number.isFinite(valor) && valor > 0 ? valor : null;
       })
       .filter((st) => st !== null);
 
