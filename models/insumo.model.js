@@ -1,5 +1,15 @@
 const mongoose = require('mongoose');
 
+const observacionSchema = new mongoose.Schema(
+  {
+    texto: { type: String, required: true, trim: true, maxlength: 500 },
+    creado_por: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', default: null },
+    creado_en: { type: Date, default: Date.now },
+    actualizado_en: { type: Date, default: Date.now }
+  },
+  { _id: true }
+);
+
 const insumoSchema = new mongoose.Schema(
   {
     nombre: { type: String, required: true, trim: true },
@@ -12,6 +22,7 @@ const insumoSchema = new mongoose.Schema(
     last_alerta_vencimiento_en: { type: Date, default: null },
     last_alerta_vencimiento_estado: { type: String, default: null },
     ultima_nota: { type: String, trim: true, default: null },
+    observaciones: { type: [observacionSchema], default: [] },
     local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', required: true },
     categoria: { type: mongoose.Schema.Types.ObjectId, ref: 'InsumoCategoria', default: null },
     orden: { type: Number, default: 0 },

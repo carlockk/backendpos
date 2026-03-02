@@ -22,6 +22,25 @@ const parsePositiveNumber = (value, field) => {
   return numero;
 };
 
+const rolesObservaciones = new Set(['admin', 'superadmin', 'cajero']);
+
+const puedeGestionarObservaciones = (userRole) => rolesObservaciones.has(String(userRole || '').toLowerCase());
+
+const sincronizarUltimaNotaDesdeObservaciones = (insumo) => {
+  if (!insumo) return;
+  const observaciones = Array.isArray(insumo.observaciones) ? insumo.observaciones : [];
+  if (observaciones.length === 0) {
+    insumo.ultima_nota = null;
+    return;
+  }
+
+  const ultima = [...observaciones].sort(
+    (a, b) => new Date(b.actualizado_en || b.creado_en || 0) - new Date(a.actualizado_en || a.creado_en || 0)
+  )[0];
+  const texto = sanitizeOptionalText(ultima?.texto, { max: 500 }) || '';
+  insumo.ultima_nota = texto.trim() ? texto.trim() : null;
+};
+
 const sameDay = (a, b) => {
   if (!a || !b) return false;
   return (
@@ -112,6 +131,137 @@ router.put('/:id/nota', async (req, res) => {
     res.json(insumo);
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar nota' });
+  }
+});
+
+router.get('/:id/observaciones', async (req, res) => {
+  try {
+    if (!puedeGestionarObservaciones(req.userRole)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const insumo = await Insumo.findOne({ _id: req.params.id, local: req.localId });
+    if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
+
+    // Compatibilidad: si solo existe la nota legacy, la migra a la nueva lista.
+    if ((!Array.isArray(insumo.observaciones) || insumo.observaciones.length === 0) && insumo.ultima_nota) {
+      const legacy = sanitizeOptionalText(insumo.ultima_nota, { max: 500 }) || '';
+      if (legacy.trim()) {
+        insumo.observaciones = [
+          {
+            texto: legacy.trim(),
+            creado_por: req.userId || null,
+            creado_en: new Date(),
+            actualizado_en: new Date()
+          }
+        ];
+        sincronizarUltimaNotaDesdeObservaciones(insumo);
+        insumo.actualizado_en = new Date();
+        await insumo.save();
+      }
+    }
+
+    const observaciones = (Array.isArray(insumo.observaciones) ? insumo.observaciones : [])
+      .map((obs) => ({
+        _id: obs._id,
+        texto: obs.texto || '',
+        creado_por: obs.creado_por || null,
+        creado_en: obs.creado_en || null,
+        actualizado_en: obs.actualizado_en || null
+      }))
+      .sort((a, b) => new Date(b.actualizado_en || b.creado_en || 0) - new Date(a.actualizado_en || a.creado_en || 0));
+
+    res.json(observaciones);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener observaciones' });
+  }
+});
+
+router.post('/:id/observaciones', async (req, res) => {
+  try {
+    if (!puedeGestionarObservaciones(req.userRole)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const texto = sanitizeOptionalText(req.body.texto, { max: 500 }) || '';
+    if (!texto.trim()) {
+      return res.status(400).json({ error: 'La observacion es requerida' });
+    }
+
+    const insumo = await Insumo.findOne({ _id: req.params.id, local: req.localId });
+    if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
+
+    insumo.observaciones.push({
+      texto: texto.trim(),
+      creado_por: req.userId || null,
+      creado_en: new Date(),
+      actualizado_en: new Date()
+    });
+    sincronizarUltimaNotaDesdeObservaciones(insumo);
+    insumo.actualizado_en = new Date();
+    await insumo.save();
+
+    res.status(201).json(insumo.observaciones[insumo.observaciones.length - 1]);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear observacion' });
+  }
+});
+
+router.put('/:id/observaciones/:obsId', async (req, res) => {
+  try {
+    if (!puedeGestionarObservaciones(req.userRole)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const texto = sanitizeOptionalText(req.body.texto, { max: 500 }) || '';
+    if (!texto.trim()) {
+      return res.status(400).json({ error: 'La observacion es requerida' });
+    }
+
+    const insumo = await Insumo.findOne({ _id: req.params.id, local: req.localId });
+    if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
+
+    const observacion = insumo.observaciones.id(req.params.obsId);
+    if (!observacion) return res.status(404).json({ error: 'Observacion no encontrada' });
+
+    observacion.texto = texto.trim();
+    observacion.actualizado_en = new Date();
+    sincronizarUltimaNotaDesdeObservaciones(insumo);
+    insumo.actualizado_en = new Date();
+    await insumo.save();
+
+    res.json({
+      _id: observacion._id,
+      texto: observacion.texto,
+      creado_por: observacion.creado_por || null,
+      creado_en: observacion.creado_en || null,
+      actualizado_en: observacion.actualizado_en || null
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar observacion' });
+  }
+});
+
+router.delete('/:id/observaciones/:obsId', async (req, res) => {
+  try {
+    if (!puedeGestionarObservaciones(req.userRole)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const insumo = await Insumo.findOne({ _id: req.params.id, local: req.localId });
+    if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
+
+    const observacion = insumo.observaciones.id(req.params.obsId);
+    if (!observacion) return res.status(404).json({ error: 'Observacion no encontrada' });
+
+    observacion.deleteOne();
+    sincronizarUltimaNotaDesdeObservaciones(insumo);
+    insumo.actualizado_en = new Date();
+    await insumo.save();
+
+    res.json({ mensaje: 'Observacion eliminada' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar observacion' });
   }
 });
 
