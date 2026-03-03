@@ -309,6 +309,80 @@ const proyectarProductoLocal = (productoLocal) => {
   };
 };
 
+const getObjectIdString = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && value._id) return String(value._id);
+  return '';
+};
+
+const combinarAgregadosPorReglas = async (localId, productosLocales = []) => {
+  if (!Array.isArray(productosLocales) || productosLocales.length === 0) return productosLocales;
+
+  const productoIds = productosLocales.map((p) => String(p._id));
+  const categoriaIds = Array.from(
+    new Set(
+      productosLocales
+        .map((p) => getObjectIdString(p?.productoBase?.categoria))
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    )
+  );
+
+  const autoAgregados = await Agregado.find({
+    local: localId,
+    activo: true,
+    $or: [
+      { productos: { $in: productoIds } },
+      { categorias: { $in: categoriaIds } }
+    ]
+  })
+    .select('nombre precio activo grupo grupos productos categorias')
+    .populate([
+      { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion' },
+      { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion' }
+    ])
+    .lean();
+
+  const porProductoId = new Map();
+
+  autoAgregados.forEach((agg) => {
+    const aggId = String(agg._id);
+    const productosSet = new Set((agg.productos || []).map((id) => String(id)));
+    const categoriasSet = new Set((agg.categorias || []).map((id) => String(id)));
+
+    productosLocales.forEach((prod) => {
+      const prodId = String(prod._id);
+      const prodCategoriaId = getObjectIdString(prod?.productoBase?.categoria);
+      const aplicaPorProducto = productosSet.has(prodId);
+      const aplicaPorCategoria = prodCategoriaId && categoriasSet.has(prodCategoriaId);
+
+      if (!aplicaPorProducto && !aplicaPorCategoria) return;
+
+      if (!porProductoId.has(prodId)) porProductoId.set(prodId, new Map());
+      porProductoId.get(prodId).set(aggId, agg);
+    });
+  });
+
+  productosLocales.forEach((prod) => {
+    const prodId = String(prod._id);
+    const manuales = Array.isArray(prod.agregados) ? prod.agregados : [];
+    const autoMap = porProductoId.get(prodId) || new Map();
+    const merged = new Map();
+
+    manuales.forEach((agg) => {
+      const aggId = getObjectIdString(agg);
+      if (aggId) merged.set(aggId, agg);
+    });
+    autoMap.forEach((agg, aggId) => {
+      if (!merged.has(aggId)) merged.set(aggId, agg);
+    });
+
+    prod.agregados = Array.from(merged.values());
+  });
+
+  return productosLocales;
+};
+
 router.get('/base', async (req, res) => {
   try {
     const bases = await ProductoBase.find().sort({ creado_en: -1 });
@@ -432,6 +506,8 @@ router.get('/', async (_req, res) => {
       })
       .sort({ creado_en: -1 });
 
+    await combinarAgregadosPorReglas(_req.localId, locales);
+
     return res.json(locales.map(proyectarProductoLocal));
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener productos' });
@@ -455,6 +531,7 @@ router.get('/:id', async (req, res) => {
       ]
     });
     if (productoLocal) {
+      await combinarAgregadosPorReglas(req.localId, [productoLocal]);
       return res.json(proyectarProductoLocal(productoLocal));
     }
     return res.status(404).json({ error: 'Producto no encontrado' });
