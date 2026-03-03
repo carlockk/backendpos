@@ -274,8 +274,11 @@ const calcularStockTotal = (variantes, stockBase) => {
   return stockBase;
 };
 
-const proyectarProductoLocal = (productoLocal) => {
+const proyectarProductoLocal = (productoLocal, agregadosOverride = null) => {
   const base = productoLocal?.productoBase || {};
+  const sourceAgregados = Array.isArray(agregadosOverride)
+    ? agregadosOverride
+    : productoLocal.agregados;
   return {
     _id: productoLocal._id,
     local: productoLocal.local,
@@ -283,8 +286,8 @@ const proyectarProductoLocal = (productoLocal) => {
     precio: productoLocal.precio,
     stock: productoLocal.stock,
     stock_total: productoLocal.stock_total,
-    agregados: Array.isArray(productoLocal.agregados)
-      ? productoLocal.agregados.map((agg) => {
+    agregados: Array.isArray(sourceAgregados)
+      ? sourceAgregados.map((agg) => {
           if (agg && typeof agg === 'object' && agg._id) {
             return {
               _id: agg._id,
@@ -317,7 +320,8 @@ const getObjectIdString = (value) => {
 };
 
 const combinarAgregadosPorReglas = async (localId, productosLocales = []) => {
-  if (!Array.isArray(productosLocales) || productosLocales.length === 0) return productosLocales;
+  const resultado = new Map();
+  if (!Array.isArray(productosLocales) || productosLocales.length === 0) return resultado;
 
   const productoIds = productosLocales.map((p) => String(p._id));
   const categoriaIds = Array.from(
@@ -377,10 +381,10 @@ const combinarAgregadosPorReglas = async (localId, productosLocales = []) => {
       if (!merged.has(aggId)) merged.set(aggId, agg);
     });
 
-    prod.agregados = Array.from(merged.values());
+    resultado.set(prodId, Array.from(merged.values()));
   });
 
-  return productosLocales;
+  return resultado;
 };
 
 router.get('/base', async (req, res) => {
@@ -506,9 +510,13 @@ router.get('/', async (_req, res) => {
       })
       .sort({ creado_en: -1 });
 
-    await combinarAgregadosPorReglas(_req.localId, locales);
+    const agregadosPorProducto = await combinarAgregadosPorReglas(_req.localId, locales);
 
-    return res.json(locales.map(proyectarProductoLocal));
+    return res.json(
+      locales.map((prod) =>
+        proyectarProductoLocal(prod, agregadosPorProducto.get(String(prod._id)) || null)
+      )
+    );
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener productos' });
   }
@@ -531,8 +539,13 @@ router.get('/:id', async (req, res) => {
       ]
     });
     if (productoLocal) {
-      await combinarAgregadosPorReglas(req.localId, [productoLocal]);
-      return res.json(proyectarProductoLocal(productoLocal));
+      const agregadosPorProducto = await combinarAgregadosPorReglas(req.localId, [productoLocal]);
+      return res.json(
+        proyectarProductoLocal(
+          productoLocal,
+          agregadosPorProducto.get(String(productoLocal._id)) || null
+        )
+      );
     }
     return res.status(404).json({ error: 'Producto no encontrado' });
   } catch (err) {
