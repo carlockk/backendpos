@@ -201,6 +201,29 @@ const resolverCategoriaEnLocalPorNombre = async ({ sourceCategoriaId, targetLoca
   return destino ? destino._id : null;
 };
 
+const resolverAgregadosEnLocalPorNombre = async ({ sourceAgregadoIds = [], targetLocalId }) => {
+  const ids = Array.isArray(sourceAgregadoIds)
+    ? sourceAgregadoIds.filter((id) => mongoose.Types.ObjectId.isValid(String(id)))
+    : [];
+  if (ids.length === 0) return [];
+
+  const origen = await Agregado.find({ _id: { $in: ids } }, 'nombre').lean();
+  const nombres = origen
+    .map((a) => sanitizeText(a?.nombre, { max: 120 }))
+    .filter(Boolean);
+  if (nombres.length === 0) return [];
+
+  const destino = await Agregado.find(
+    { local: targetLocalId, nombre: { $in: nombres } },
+    '_id nombre'
+  ).lean();
+
+  const setNombres = new Set(nombres.map((n) => n.toLowerCase()));
+  return destino
+    .filter((a) => setNombres.has(String(a.nombre || '').trim().toLowerCase()))
+    .map((a) => a._id);
+};
+
 const parseStockValue = (valor, controlarStock = true) => {
   if (!controlarStock) return null;
   if (valor === undefined || valor === null || valor === '') return null;
@@ -542,6 +565,20 @@ router.post('/local/use-base/:baseId', async (req, res) => {
       stock: stockCalculado,
       variantes: variantesLocal
     });
+
+    const sourceProductoLocalId = String(req.body?.sourceProductoLocalId || '').trim();
+    if (mongoose.Types.ObjectId.isValid(sourceProductoLocalId)) {
+      const sourceProductoLocal = await ProductoLocal.findById(sourceProductoLocalId, 'agregados').lean();
+      if (sourceProductoLocal?.agregados?.length) {
+        const agregadosDestino = await resolverAgregadosEnLocalPorNombre({
+          sourceAgregadoIds: sourceProductoLocal.agregados,
+          targetLocalId: req.localId
+        });
+        if (agregadosDestino.length > 0) {
+          local.agregados = agregadosDestino;
+        }
+      }
+    }
 
     const guardado = await local.save();
     const poblado = await guardado.populate('productoBase');

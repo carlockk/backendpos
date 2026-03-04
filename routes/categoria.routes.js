@@ -318,6 +318,9 @@ router.post('/clonar', async (req, res) => {
     if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
       return res.status(400).json({ error: 'Categoria invalida' });
     }
+    if (String(sourceLocalId) === String(req.localId)) {
+      return res.status(400).json({ error: 'El local origen y destino deben ser distintos' });
+    }
 
     const todas = await Categoria.find({ local: sourceLocalId });
     const porId = new Map(todas.map((c) => [c._id.toString(), c]));

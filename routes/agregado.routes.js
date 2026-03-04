@@ -33,6 +33,8 @@ const parseObjectIdArray = (raw) => {
   );
 };
 
+const normalizeNameKey = (value) => String(value || '').trim().toLowerCase();
+
 const resolveGroupIds = async ({ localId, grupoRaw, gruposRaw }) => {
   const gruposFromArray = parseObjectIdArray(gruposRaw);
   const grupoSingle =
@@ -285,6 +287,12 @@ router.post('/clonar', async (req, res) => {
       origen = await Agregado.find({ local: sourceLocalId })
         .populate('grupo', 'categoriaPrincipal titulo descripcion modoSeleccion')
         .populate('grupos', 'categoriaPrincipal titulo descripcion modoSeleccion')
+        .populate('categorias', 'nombre')
+        .populate({
+          path: 'productos',
+          select: 'productoBase',
+          populate: { path: 'productoBase', select: 'nombre' }
+        })
         .lean();
       if (origen.length === 0) {
         return res.status(400).json({ error: 'No hay agregados para clonar' });
@@ -293,6 +301,12 @@ router.post('/clonar', async (req, res) => {
       const agregado = await Agregado.findOne({ _id: agregadoId, local: sourceLocalId })
         .populate('grupo', 'categoriaPrincipal titulo descripcion modoSeleccion')
         .populate('grupos', 'categoriaPrincipal titulo descripcion modoSeleccion')
+        .populate('categorias', 'nombre')
+        .populate({
+          path: 'productos',
+          select: 'productoBase',
+          populate: { path: 'productoBase', select: 'nombre' }
+        })
         .lean();
       if (!agregado) {
         return res.status(404).json({ error: 'Agregado origen no encontrado' });
@@ -354,6 +368,25 @@ router.post('/clonar', async (req, res) => {
       gruposCreados += 1;
     }
 
+    const [categoriasDestino, productosDestino] = await Promise.all([
+      Categoria.find({ local: req.localId }, '_id nombre').lean(),
+      ProductoLocal.find({ local: req.localId }, '_id productoBase')
+        .populate({ path: 'productoBase', select: 'nombre' })
+        .lean()
+    ]);
+
+    const categoriaIdPorNombre = new Map();
+    categoriasDestino.forEach((cat) => {
+      const key = normalizeNameKey(cat?.nombre);
+      if (key && !categoriaIdPorNombre.has(key)) categoriaIdPorNombre.set(key, cat._id);
+    });
+
+    const productoIdPorNombre = new Map();
+    productosDestino.forEach((prod) => {
+      const key = normalizeNameKey(prod?.productoBase?.nombre);
+      if (key && !productoIdPorNombre.has(key)) productoIdPorNombre.set(key, prod._id);
+    });
+
     const docs = origen.map((a) => {
       const nombre = sanitizeText(a?.nombre, { max: 120 });
       const descripcion = sanitizeOptionalText(a?.descripcion, { max: 300 }) || '';
@@ -367,14 +400,24 @@ router.post('/clonar', async (req, res) => {
         .filter(Boolean);
       const grupoId = gruposIds[0] || null;
       const precio = Number.isFinite(Number(a?.precio)) ? Number(a.precio) : null;
+      const categoriasIds = Array.isArray(a?.categorias)
+        ? a.categorias
+            .map((c) => categoriaIdPorNombre.get(normalizeNameKey(c?.nombre)) || null)
+            .filter(Boolean)
+        : [];
+      const productosIds = Array.isArray(a?.productos)
+        ? a.productos
+            .map((p) => productoIdPorNombre.get(normalizeNameKey(p?.productoBase?.nombre)) || null)
+            .filter(Boolean)
+        : [];
       return {
         nombre,
         descripcion,
         precio,
         grupo: grupoId,
         grupos: gruposIds,
-        categorias: [],
-        productos: [],
+        categorias: Array.from(new Set(categoriasIds.map((id) => String(id)))),
+        productos: Array.from(new Set(productosIds.map((id) => String(id)))),
         local: req.localId,
         actualizado_en: new Date()
       };
