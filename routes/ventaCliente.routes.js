@@ -17,7 +17,12 @@ const {
 } = require("../utils/input");
 const { adjuntarScopeLocal, requiereLocal } = require("../middlewares/localScope");
 const { getJwtSecret } = require("../utils/jwtConfig");
-const { evaluateWebSchedule, normalizeWebSchedule, validatePickupTime } = require("../utils/webSchedule");
+const {
+  evaluateWebSchedule,
+  normalizeWebSchedule,
+  validatePickupTime,
+  resolveScheduleClock,
+} = require("../utils/webSchedule");
 
 const JWT_SECRET = getJwtSecret();
 const DEFAULT_ESTADOS_PEDIDO = [
@@ -213,7 +218,8 @@ router.post("/", async (req, res) => {
       if (!horaRetiro) {
         return res.status(400).json({ msg: "Debes indicar la hora de retiro" });
       }
-      const validacionRetiro = validatePickupTime(horariosWeb, new Date().getDay(), horaRetiro);
+      const clock = resolveScheduleClock(new Date());
+      const validacionRetiro = validatePickupTime(horariosWeb, clock.day, horaRetiro);
       if (!validacionRetiro.valid) {
         return res.status(400).json({ msg: validacionRetiro.error || "Hora de retiro fuera de horario" });
       }
@@ -758,4 +764,6 @@ router.get("/:id", authMiddleware, async (req, res) => {
 });
 
 module.exports = router;
+
+
 

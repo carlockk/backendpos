@@ -22,7 +22,12 @@ const {
   isValidEmail,
   toNumberOrNull,
 } = require("../utils/input");
-const { evaluateWebSchedule, normalizeWebSchedule, validatePickupTime } = require("../utils/webSchedule");
+const {
+  evaluateWebSchedule,
+  normalizeWebSchedule,
+  validatePickupTime,
+  resolveScheduleClock,
+} = require("../utils/webSchedule");
 
 const JWT_SECRET = getJwtSecret();
 
@@ -275,7 +280,8 @@ router.post("/crear-sesion", async (req, res) => {
       if (!horaRetiro) {
         return res.status(400).json({ error: "Debes indicar la hora de retiro" });
       }
-      const validacionRetiro = validatePickupTime(horariosWeb, new Date().getDay(), horaRetiro);
+      const clock = resolveScheduleClock(new Date());
+      const validacionRetiro = validatePickupTime(horariosWeb, clock.day, horaRetiro);
       if (!validacionRetiro.valid) {
         return res.status(400).json({ error: validacionRetiro.error || "Hora de retiro fuera de horario" });
       }
@@ -393,3 +399,5 @@ router.post("/confirmar-sesion", async (req, res) => {
 });
 
 module.exports = router;
+
+

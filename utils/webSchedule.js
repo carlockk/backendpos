@@ -1,5 +1,18 @@
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+const DEFAULT_WEB_TIMEZONE =
+  process.env.WEB_SCHEDULE_TIMEZONE || process.env.TZ || "America/Santiago";
+
+const WEEKDAY_MAP = {
+  sun: 0,
+  mon: 1,
+  tue: 2,
+  wed: 3,
+  thu: 4,
+  fri: 5,
+  sat: 6,
+};
+
 const parseTimeToMinutes = (raw) => {
   const value = String(raw || "").trim();
   const match = value.match(TIME_RE);
@@ -13,6 +26,43 @@ const minutesToTime = (minutes) => {
   const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
   const mm = String(minutes % 60).padStart(2, "0");
   return `${hh}:${mm}`;
+};
+
+const resolveScheduleClock = (now = new Date(), timeZone = DEFAULT_WEB_TIMEZONE) => {
+  const date = now instanceof Date ? now : new Date(now);
+  const fallback = {
+    day: date.getDay(),
+    minute: date.getHours() * 60 + date.getMinutes(),
+    timeZone: "system",
+  };
+
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+
+    const parts = formatter.formatToParts(date);
+    const weekday = String(parts.find((item) => item.type === "weekday")?.value || "").toLowerCase();
+    const hour = Number(parts.find((item) => item.type === "hour")?.value);
+    const minutePart = Number(parts.find((item) => item.type === "minute")?.value);
+    const day = WEEKDAY_MAP[weekday];
+
+    if (!Number.isInteger(day) || !Number.isFinite(hour) || !Number.isFinite(minutePart)) {
+      return fallback;
+    }
+
+    return {
+      day,
+      minute: hour * 60 + minutePart,
+      timeZone,
+    };
+  } catch {
+    return fallback;
+  }
 };
 
 const normalizeWebSchedule = (raw) => {
@@ -82,26 +132,31 @@ const isMinuteInsideSlots = (minute, slots = []) =>
 
 const evaluateWebSchedule = (schedule = [], now = new Date()) => {
   const normalized = normalizeWebSchedule(schedule);
+  const clock = resolveScheduleClock(now);
+
   if (!scheduleHasAnySlots(normalized)) {
     return {
       active: false,
       open: true,
       reason: "sin_horario",
+      day: clock.day,
+      minute: clock.minute,
+      timeZone: clock.timeZone,
       schedule: normalized,
     };
   }
 
-  const day = now.getDay();
-  const minute = now.getHours() * 60 + now.getMinutes();
-  const slots = getDaySlots(normalized, day);
-  const open = isMinuteInsideSlots(minute, slots);
+  const slots = getDaySlots(normalized, clock.day);
+  const open = isMinuteInsideSlots(clock.minute, slots);
 
   return {
     active: true,
     open,
     reason: open ? "abierto" : "cerrado",
-    day,
+    day: clock.day,
+    minute: clock.minute,
     slots,
+    timeZone: clock.timeZone,
     schedule: normalized,
   };
 };
@@ -134,4 +189,5 @@ module.exports = {
   evaluateWebSchedule,
   validatePickupTime,
   scheduleHasAnySlots,
+  resolveScheduleClock,
 };
