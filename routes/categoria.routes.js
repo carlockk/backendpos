@@ -8,6 +8,28 @@ const router = express.Router();
 router.use(adjuntarScopeLocal);
 router.use(requiereLocal);
 
+const categoriaGeneraCiclo = async ({ localId, categoriaId, posibleParentId }) => {
+  if (!categoriaId || !posibleParentId) return false;
+  if (String(categoriaId) === String(posibleParentId)) return true;
+
+  let actualId = String(posibleParentId);
+  const visitados = new Set();
+
+  while (actualId && !visitados.has(actualId)) {
+    visitados.add(actualId);
+    if (actualId === String(categoriaId)) return true;
+
+    const actual = await Categoria.findOne(
+      { _id: actualId, local: localId },
+      'parent'
+    ).lean();
+    if (!actual?.parent) return false;
+    actualId = String(actual.parent);
+  }
+
+  return false;
+};
+
 /**
  * @swagger
  * tags:
@@ -214,6 +236,14 @@ router.put('/:id', async (req, res) => {
         const parent = await Categoria.findOne({ _id: parentRaw, local: req.localId });
         if (!parent) {
           return res.status(400).json({ error: 'Categoría padre no encontrada' });
+        }
+        const generaCiclo = await categoriaGeneraCiclo({
+          localId: req.localId,
+          categoriaId: req.params.id,
+          posibleParentId: parentRaw
+        });
+        if (generaCiclo) {
+          return res.status(400).json({ error: 'La categoría padre genera un ciclo inválido' });
         }
         parentId = parentRaw;
       }

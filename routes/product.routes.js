@@ -168,6 +168,39 @@ const normalizeCategoriaId = (raw) => {
   return raw;
 };
 
+const validarCategoriaProducto = async ({ localId, categoriaId }) => {
+  if (!categoriaId) return null;
+  if (!mongoose.Types.ObjectId.isValid(categoriaId)) {
+    throw new Error('La categoria es invalida');
+  }
+
+  const categoria = await Categoria.findOne({ _id: categoriaId, local: localId }, '_id').lean();
+  if (!categoria) {
+    throw new Error('La categoria es invalida');
+  }
+
+  const tieneSubcategorias = await Categoria.exists({ parent: categoriaId, local: localId });
+  if (tieneSubcategorias) {
+    throw new Error('No se puede asignar productos a una categoria padre con subcategorias');
+  }
+
+  return categoria;
+};
+
+const resolverCategoriaEnLocalPorNombre = async ({ sourceCategoriaId, targetLocalId }) => {
+  if (!sourceCategoriaId || !mongoose.Types.ObjectId.isValid(sourceCategoriaId)) return null;
+
+  const origen = await Categoria.findById(sourceCategoriaId, 'nombre').lean();
+  if (!origen?.nombre) return null;
+
+  const destino = await Categoria.findOne(
+    { local: targetLocalId, nombre: origen.nombre },
+    '_id'
+  ).lean();
+
+  return destino ? destino._id : null;
+};
+
 const parseStockValue = (valor, controlarStock = true) => {
   if (!controlarStock) return null;
   if (valor === undefined || valor === null || valor === '') return null;
@@ -419,12 +452,8 @@ router.post('/base', upload.single('imagen'), async (req, res) => {
     }));
 
     const categoriaId = normalizeCategoriaId(req.body.categoria);
-    if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
-      throw new Error('La categoria es invalida');
-    }
     if (categoriaId) {
-      const categoria = await Categoria.findOne({ _id: categoriaId, local: req.localId });
-      if (!categoria) throw new Error('La categoria es invalida');
+      await validarCategoriaProducto({ localId: req.localId, categoriaId });
     }
 
     const base = new ProductoBase({
@@ -453,7 +482,13 @@ router.post('/local/use-base/:baseId', async (req, res) => {
     const base = await ProductoBase.findById(baseId);
     if (!base) return res.status(404).json({ error: 'Producto base no encontrado' });
 
-    const existe = await ProductoLocal.findOne({ productoBase: baseId, local: req.localId });
+    const existentesLocal = await ProductoLocal.find({ local: req.localId })
+      .populate('productoBase', 'nombre')
+      .lean();
+    const nombreBase = String(base.nombre || '').trim().toLowerCase();
+    const existe = existentesLocal.some(
+      (item) => String(item?.productoBase?.nombre || '').trim().toLowerCase() === nombreBase
+    );
     if (existe) {
       return res.status(400).json({ error: 'Ese producto ya existe en este local' });
     }
@@ -465,8 +500,31 @@ router.post('/local/use-base/:baseId', async (req, res) => {
 
     const controlarStock = String(req.body?.controlarStock) === 'true';
     const stockBase = parseStockValue(req.body?.stock, controlarStock);
-    const variantesLocal = normalizarVariantes(req.body?.variantes).map((v) => ({
-      baseVarianteId: v._id,
+    const categoriaMapeada = await resolverCategoriaEnLocalPorNombre({
+      sourceCategoriaId: base.categoria,
+      targetLocalId: req.localId
+    });
+
+    const baseLocal = new ProductoBase({
+      sku: base.sku || '',
+      nombre: base.nombre,
+      descripcion: base.descripcion || '',
+      imagen_url: base.imagen_url || '',
+      cloudinary_id: base.cloudinary_id || '',
+      categoria: categoriaMapeada || null,
+      variantes: Array.isArray(base.variantes)
+        ? base.variantes.map((v) => ({
+            nombre: v.nombre,
+            color: v.color,
+            talla: v.talla,
+            sku: v.sku
+          }))
+        : []
+    });
+    const baseGuardado = await baseLocal.save();
+
+    const variantesLocal = normalizarVariantes(req.body?.variantes).map((v, idx) => ({
+      baseVarianteId: baseGuardado.variantes[idx]?._id || v._id,
       nombre: v.nombre,
       color: v.color,
       talla: v.talla,
@@ -478,7 +536,7 @@ router.post('/local/use-base/:baseId', async (req, res) => {
     const stockCalculado = calcularStockTotal(variantesLocal, stockBase);
 
     const local = new ProductoLocal({
-      productoBase: baseId,
+      productoBase: baseGuardado._id,
       local: req.localId,
       precio,
       stock: stockCalculado,
@@ -498,7 +556,7 @@ router.get('/', async (_req, res) => {
     const locales = await ProductoLocal.find({ local: _req.localId })
       .populate({
         path: 'productoBase',
-        populate: { path: 'categoria', select: 'nombre parent' }
+        populate: { path: 'categoria', select: 'nombre parent', match: { local: _req.localId } }
       })
       .populate({
         path: 'agregados',
@@ -529,7 +587,7 @@ router.get('/:id', async (req, res) => {
       local: req.localId
     }).populate({
       path: 'productoBase',
-      populate: { path: 'categoria', select: 'nombre parent' }
+      populate: { path: 'categoria', select: 'nombre parent', match: { local: req.localId } }
     }).populate({
       path: 'agregados',
       select: 'nombre precio activo grupo grupos',
@@ -596,14 +654,8 @@ router.post('/', upload.single('imagen'), async (req, res) => {
     const stockCalculado = calcularStockTotal(variantesRaw, stockBase);
 
     const categoriaId = normalizeCategoriaId(req.body.categoria);
-    if (categoriaId && !mongoose.Types.ObjectId.isValid(categoriaId)) {
-      throw new Error('La categoria es invalida');
-    }
     if (categoriaId) {
-      const categoria = await Categoria.findOne({ _id: categoriaId, local: req.localId });
-      if (!categoria) {
-        throw new Error('La categoria es invalida');
-      }
+      await validarCategoriaProducto({ localId: req.localId, categoriaId });
     }
 
     let agregadosValidos = [];
@@ -686,12 +738,44 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
     }).populate('productoBase');
 
     if (productoLocal) {
-      let imagen_url = productoLocal.productoBase?.imagen_url || '';
-      let cloudinary_id = productoLocal.productoBase?.cloudinary_id || '';
+      if (!productoLocal.productoBase) {
+        throw new Error('Producto base no encontrado para este local');
+      }
+
+      const usosBase = await ProductoLocal.countDocuments({
+        productoBase: productoLocal.productoBase._id
+      });
+      const baseEraCompartida = usosBase > 1;
+
+      let baseEditable = productoLocal.productoBase;
+      if (baseEraCompartida) {
+        baseEditable = new ProductoBase({
+          sku: baseEditable.sku || '',
+          nombre: baseEditable.nombre,
+          descripcion: baseEditable.descripcion || '',
+          imagen_url: baseEditable.imagen_url || '',
+          cloudinary_id: baseEditable.cloudinary_id || '',
+          categoria: baseEditable.categoria || null,
+          variantes: Array.isArray(baseEditable.variantes)
+            ? baseEditable.variantes.map((v) => ({
+                _id: v._id,
+                nombre: v.nombre,
+                color: v.color,
+                talla: v.talla,
+                sku: v.sku
+              }))
+            : []
+        });
+        await baseEditable.save();
+        productoLocal.productoBase = baseEditable._id;
+      }
+
+      let imagen_url = baseEditable?.imagen_url || '';
+      let cloudinary_id = baseEditable?.cloudinary_id || '';
       const imagenUrlBody = sanitizeOptionalText(req.body.imagen_url, { max: 600 }) || '';
 
       if (req.file) {
-        if (cloudinary_id) await eliminarImagen(cloudinary_id);
+        if (cloudinary_id && !baseEraCompartida) await eliminarImagen(cloudinary_id);
         const subida = await subirImagen(req.file);
         imagen_url = subida.secure_url;
         cloudinary_id = subida.public_id;
@@ -701,7 +785,9 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         }
         if (!imagenUrlBody) {
           if (cloudinary_id) {
-            await eliminarImagen(cloudinary_id);
+            if (!baseEraCompartida) {
+              await eliminarImagen(cloudinary_id);
+            }
             cloudinary_id = '';
           }
           imagen_url = '';
@@ -711,7 +797,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
           const cloudinaryAnterior = cloudinary_id;
           imagen_url = subida.secure_url;
           cloudinary_id = subida.public_id;
-          if (cloudinaryAnterior) {
+          if (cloudinaryAnterior && !baseEraCompartida) {
             await eliminarImagen(cloudinaryAnterior);
           }
         }
@@ -733,8 +819,8 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
       const stockBase = parseStockValue(req.body.stock, controlarStock);
       const variantesRaw = normalizarVariantes(req.body.variantes);
       const agregadosRaw = parseObjectIdArray(req.body.agregados);
-      const baseActuales = Array.isArray(productoLocal.productoBase?.variantes)
-        ? productoLocal.productoBase.variantes
+      const baseActuales = Array.isArray(baseEditable?.variantes)
+        ? baseEditable.variantes
         : [];
       const basePorId = new Map(baseActuales.map((b) => [String(b._id), b]));
 
@@ -767,10 +853,7 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         categoriaId = null;
       }
       if (categoriaId) {
-        const categoria = await Categoria.findOne({ _id: categoriaId, local: req.localId });
-        if (!categoria) {
-          throw new Error('La categoria es invalida');
-        }
+        await validarCategoriaProducto({ localId: req.localId, categoriaId });
       }
 
       let agregadosValidos = [];
@@ -786,14 +869,14 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
         ).lean();
       }
 
-      if (productoLocal.productoBase) {
-        productoLocal.productoBase.nombre = nombre;
-        productoLocal.productoBase.descripcion = descripcion;
-        productoLocal.productoBase.categoria = categoriaId || null;
-        productoLocal.productoBase.imagen_url = imagen_url;
-        productoLocal.productoBase.cloudinary_id = cloudinary_id;
-        productoLocal.productoBase.variantes = variantesBaseActualizadas;
-        await productoLocal.productoBase.save();
+      if (baseEditable) {
+        baseEditable.nombre = nombre;
+        baseEditable.descripcion = descripcion;
+        baseEditable.categoria = categoriaId || null;
+        baseEditable.imagen_url = imagen_url;
+        baseEditable.cloudinary_id = cloudinary_id;
+        baseEditable.variantes = variantesBaseActualizadas;
+        await baseEditable.save();
       }
 
       productoLocal.precio = precio;
