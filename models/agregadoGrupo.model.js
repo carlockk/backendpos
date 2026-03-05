@@ -5,6 +5,7 @@ const agregadoGrupoSchema = new mongoose.Schema({
   titulo: { type: String, required: true, trim: true },
   descripcion: { type: String, trim: true, default: '' },
   modoSeleccion: { type: String, enum: ['multiple', 'unico'], default: 'multiple' },
+  obligatorio: { type: Boolean, default: false },
   local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', required: true },
   activo: { type: Boolean, default: true },
   creado_en: { type: Date, default: Date.now },

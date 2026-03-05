@@ -65,6 +65,15 @@ const normalizeModoSeleccion = (raw, fallback = 'multiple') => {
   return null;
 };
 
+const normalizeObligatorio = (raw, fallback = false) => {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return fallback;
+  if (typeof raw === 'boolean') return raw;
+  const value = String(raw).trim().toLowerCase();
+  if (['true', '1', 'si', 'sí', 'yes'].includes(value)) return true;
+  if (['false', '0', 'no'].includes(value)) return false;
+  return null;
+};
+
 router.get('/grupos', async (req, res) => {
   try {
     const grupos = await AgregadoGrupo.find({ local: req.localId }).sort({ titulo: 1 });
@@ -83,8 +92,10 @@ router.post('/grupos', async (req, res) => {
     const categoriaPrincipal = sanitizeOptionalText(req.body?.categoriaPrincipal, { max: 100 }) || '';
     const descripcion = sanitizeOptionalText(req.body?.descripcion, { max: 300 }) || '';
     const modoSeleccion = normalizeModoSeleccion(req.body?.modoSeleccion, 'multiple');
+    const obligatorio = normalizeObligatorio(req.body?.obligatorio, false);
     if (!titulo) return res.status(400).json({ error: 'El titulo es obligatorio' });
     if (!modoSeleccion) return res.status(400).json({ error: 'Modo de seleccion invalido' });
+    if (obligatorio === null) return res.status(400).json({ error: 'Campo obligatorio invalido' });
 
     const existe = await AgregadoGrupo.findOne({ local: req.localId, titulo });
     if (existe) return res.status(400).json({ error: 'Ya existe un grupo con ese titulo' });
@@ -94,6 +105,7 @@ router.post('/grupos', async (req, res) => {
       titulo,
       descripcion,
       modoSeleccion,
+      obligatorio,
       local: req.localId,
       actualizado_en: new Date()
     });
@@ -130,12 +142,18 @@ router.put('/grupos/:id', async (req, res) => {
       req.body?.modoSeleccion,
       grupo.modoSeleccion || 'multiple'
     );
+    const obligatorio = normalizeObligatorio(
+      req.body?.obligatorio,
+      Boolean(grupo.obligatorio)
+    );
     if (!modoSeleccion) return res.status(400).json({ error: 'Modo de seleccion invalido' });
+    if (obligatorio === null) return res.status(400).json({ error: 'Campo obligatorio invalido' });
 
     grupo.titulo = titulo;
     grupo.categoriaPrincipal = categoriaPrincipal;
     grupo.descripcion = descripcion;
     grupo.modoSeleccion = modoSeleccion;
+    grupo.obligatorio = obligatorio;
     grupo.actualizado_en = new Date();
     await grupo.save();
     res.json(grupo);
@@ -173,8 +191,8 @@ router.delete('/grupos/:id', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const agregados = await Agregado.find({ local: req.localId })
-      .populate('grupo', 'categoriaPrincipal titulo modoSeleccion')
-      .populate('grupos', 'categoriaPrincipal titulo modoSeleccion')
+      .populate('grupo', 'categoriaPrincipal titulo modoSeleccion obligatorio')
+      .populate('grupos', 'categoriaPrincipal titulo modoSeleccion obligatorio')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',
@@ -248,8 +266,8 @@ router.post('/', async (req, res) => {
     });
 
     const poblado = await Agregado.findById(agregado._id)
-      .populate('grupo', 'categoriaPrincipal titulo modoSeleccion')
-      .populate('grupos', 'categoriaPrincipal titulo modoSeleccion')
+      .populate('grupo', 'categoriaPrincipal titulo modoSeleccion obligatorio')
+      .populate('grupos', 'categoriaPrincipal titulo modoSeleccion obligatorio')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',
@@ -285,8 +303,8 @@ router.post('/clonar', async (req, res) => {
     let origen = [];
     if (clonarTodas) {
       origen = await Agregado.find({ local: sourceLocalId })
-        .populate('grupo', 'categoriaPrincipal titulo descripcion modoSeleccion')
-        .populate('grupos', 'categoriaPrincipal titulo descripcion modoSeleccion')
+        .populate('grupo', 'categoriaPrincipal titulo descripcion modoSeleccion obligatorio')
+        .populate('grupos', 'categoriaPrincipal titulo descripcion modoSeleccion obligatorio')
         .populate('categorias', 'nombre')
         .populate({
           path: 'productos',
@@ -299,8 +317,8 @@ router.post('/clonar', async (req, res) => {
       }
     } else {
       const agregado = await Agregado.findOne({ _id: agregadoId, local: sourceLocalId })
-        .populate('grupo', 'categoriaPrincipal titulo descripcion modoSeleccion')
-        .populate('grupos', 'categoriaPrincipal titulo descripcion modoSeleccion')
+        .populate('grupo', 'categoriaPrincipal titulo descripcion modoSeleccion obligatorio')
+        .populate('grupos', 'categoriaPrincipal titulo descripcion modoSeleccion obligatorio')
         .populate('categorias', 'nombre')
         .populate({
           path: 'productos',
@@ -361,6 +379,7 @@ router.post('/clonar', async (req, res) => {
         titulo,
         descripcion: sanitizeOptionalText(grupo?.descripcion, { max: 300 }) || '',
         modoSeleccion: normalizeModoSeleccion(grupo?.modoSeleccion, 'multiple') || 'multiple',
+        obligatorio: normalizeObligatorio(grupo?.obligatorio, false) || false,
         local: req.localId,
         actualizado_en: new Date()
       });
@@ -484,8 +503,8 @@ router.put('/:id', async (req, res) => {
     await agregado.save();
 
     const poblado = await Agregado.findById(agregado._id)
-      .populate('grupo', 'categoriaPrincipal titulo modoSeleccion')
-      .populate('grupos', 'categoriaPrincipal titulo modoSeleccion')
+      .populate('grupo', 'categoriaPrincipal titulo modoSeleccion obligatorio')
+      .populate('grupos', 'categoriaPrincipal titulo modoSeleccion obligatorio')
       .populate('categorias', 'nombre')
       .populate({
         path: 'productos',

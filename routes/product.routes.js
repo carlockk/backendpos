@@ -398,8 +398,8 @@ const combinarAgregadosPorReglas = async (localId, productosLocales = []) => {
   })
     .select('nombre precio activo grupo grupos productos categorias')
     .populate([
-      { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion' },
-      { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion' }
+      { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion obligatorio' },
+      { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion obligatorio' }
     ])
     .lean();
 
@@ -599,8 +599,8 @@ router.get('/', async (_req, res) => {
         path: 'agregados',
         select: 'nombre precio activo grupo grupos',
         populate: [
-          { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion' },
-          { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion' }
+          { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion obligatorio' },
+          { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion obligatorio' }
         ]
       })
       .sort({ creado_en: -1 });
@@ -629,8 +629,8 @@ router.get('/:id', async (req, res) => {
       path: 'agregados',
       select: 'nombre precio activo grupo grupos',
       populate: [
-        { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion' },
-        { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion' }
+        { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion obligatorio' },
+        { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion obligatorio' }
       ]
     });
     if (productoLocal) {
@@ -754,8 +754,8 @@ router.post('/', upload.single('imagen'), async (req, res) => {
         path: 'agregados',
         select: 'nombre precio activo grupo grupos',
         populate: [
-          { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion' },
-          { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion' }
+          { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion obligatorio' },
+          { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion obligatorio' }
         ]
       }
     ]);
@@ -931,8 +931,8 @@ router.put('/:id', upload.single('imagen'), async (req, res) => {
           path: 'agregados',
           select: 'nombre precio activo grupo grupos',
           populate: [
-            { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion' },
-            { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion' }
+            { path: 'grupo', select: 'categoriaPrincipal titulo modoSeleccion obligatorio' },
+            { path: 'grupos', select: 'categoriaPrincipal titulo modoSeleccion obligatorio' }
           ]
         }
       ]);
