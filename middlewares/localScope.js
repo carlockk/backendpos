@@ -89,7 +89,8 @@ const adjuntarScopeLocal = (req, res, next) => {
         req.localId = localFromToken || null;
       }
     } else {
-      const puedeElegirLocalPorHeader = roleFromToken === 'repartidor' && !localFromToken;
+      // Para tokens sin local embebido (ej. cliente web), se permite elegir local por header.
+      const puedeElegirLocalPorHeader = !localFromToken;
       if (
         headerLocalRaw !== undefined &&
         headerLocalRaw !== null &&
