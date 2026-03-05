@@ -26,21 +26,6 @@ const rolesObservaciones = new Set(['admin', 'superadmin', 'cajero']);
 
 const puedeGestionarObservaciones = (userRole) => rolesObservaciones.has(String(userRole || '').toLowerCase());
 
-const sincronizarUltimaNotaDesdeObservaciones = (insumo) => {
-  if (!insumo) return;
-  const observaciones = Array.isArray(insumo.observaciones) ? insumo.observaciones : [];
-  if (observaciones.length === 0) {
-    insumo.ultima_nota = null;
-    return;
-  }
-
-  const ultima = [...observaciones].sort(
-    (a, b) => new Date(b.actualizado_en || b.creado_en || 0) - new Date(a.actualizado_en || a.creado_en || 0)
-  )[0];
-  const texto = sanitizeOptionalText(ultima?.texto, { max: 500 }) || '';
-  insumo.ultima_nota = texto.trim() ? texto.trim() : null;
-};
-
 const sameDay = (a, b) => {
   if (!a || !b) return false;
   return (
@@ -155,7 +140,6 @@ router.get('/:id/observaciones', async (req, res) => {
             actualizado_en: new Date()
           }
         ];
-        sincronizarUltimaNotaDesdeObservaciones(insumo);
         insumo.actualizado_en = new Date();
         await insumo.save();
       }
@@ -197,7 +181,6 @@ router.post('/:id/observaciones', async (req, res) => {
       creado_en: new Date(),
       actualizado_en: new Date()
     });
-    sincronizarUltimaNotaDesdeObservaciones(insumo);
     insumo.actualizado_en = new Date();
     await insumo.save();
 
@@ -226,7 +209,6 @@ router.put('/:id/observaciones/:obsId', async (req, res) => {
 
     observacion.texto = texto.trim();
     observacion.actualizado_en = new Date();
-    sincronizarUltimaNotaDesdeObservaciones(insumo);
     insumo.actualizado_en = new Date();
     await insumo.save();
 
@@ -255,7 +237,6 @@ router.delete('/:id/observaciones/:obsId', async (req, res) => {
     if (!observacion) return res.status(404).json({ error: 'Observacion no encontrada' });
 
     observacion.deleteOne();
-    sincronizarUltimaNotaDesdeObservaciones(insumo);
     insumo.actualizado_en = new Date();
     await insumo.save();
 
