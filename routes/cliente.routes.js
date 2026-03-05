@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -13,7 +14,13 @@ const {
 const { adjuntarScopeLocal, requiereLocal } = require('../middlewares/localScope');
 
 const JWT_SECRET = getJwtSecret();
-router.use(adjuntarScopeLocal);
+
+const readLocalIdFromHeader = (req) => {
+  const raw = req.headers['x-local-id'];
+  if (raw === undefined || raw === null || String(raw).trim() === '') return null;
+  if (!mongoose.Types.ObjectId.isValid(String(raw))) return null;
+  return String(raw);
+};
 
 /**
  * @swagger
@@ -56,6 +63,7 @@ router.use(adjuntarScopeLocal);
  */
 router.post('/register', async (req, res) => {
   try {
+    const localId = readLocalIdFromHeader(req);
     const nombre = sanitizeText(req.body.nombre, { max: 80 });
     const email = normalizeEmail(req.body.email);
     const password = typeof req.body.password === 'string' ? req.body.password : '';
@@ -77,7 +85,7 @@ router.post('/register', async (req, res) => {
       password: hashedPassword,
       direccion,
       telefono,
-      local: req.localId || null
+      local: localId || null
     });
 
     await nuevoCliente.save();
@@ -167,7 +175,7 @@ router.post('/login', async (req, res) => {
  *       500:
  *         description: Error al obtener clientes
  */
-router.get('/todos', requiereLocal, async (req, res) => {
+router.get('/todos', adjuntarScopeLocal, requiereLocal, async (req, res) => {
   try {
     const clientes = await Cliente.find({ local: req.localId }).select('-password');
     res.json(clientes);
