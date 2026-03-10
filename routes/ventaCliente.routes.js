@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const router = express.Router();
 const VentaCliente = require("../models/ventaCliente.model");
 const PedidoEstadoConfig = require("../models/pedidoEstadoConfig.model");
+const Local = require("../models/local.model");
 const SocialConfig = require("../models/socialConfig.model");
 const Usuario = require("../models/usuario.model");
 const authMiddleware = require("../middlewares/auth");
@@ -163,6 +164,40 @@ const esPedidoDeliveryLegacy = (pedido) => {
   });
 };
 
+const validarCanalesYPagoLocal = (local, tipoPedido, tipoPago) => {
+  if (!local) {
+    return "Local no encontrado";
+  }
+
+  const servicios = local?.servicios || {};
+  const pagosWeb = local?.pagos_web || {};
+
+  if (tipoPedido === "delivery" && servicios.delivery === false) {
+    return "Delivery no disponible en este local";
+  }
+  if (tipoPedido === "retiro" && servicios.retiro === false) {
+    return "Retiro en tienda no disponible en este local";
+  }
+  if (tipoPedido === "tienda" && servicios.tienda === false) {
+    return "Consumo en tienda no disponible en este local";
+  }
+
+  const pagoNormalizado = ["online", "tarjeta_webpay", "tarjeta"].includes(tipoPago)
+    ? "tarjeta"
+    : ["efectivo", "caja", "domicilio"].includes(tipoPago)
+    ? "efectivo"
+    : tipoPago;
+
+  if (pagoNormalizado === "tarjeta" && pagosWeb.tarjeta === false) {
+    return "Pago con tarjeta no disponible en este local";
+  }
+  if (pagoNormalizado === "efectivo" && pagosWeb.efectivo === false) {
+    return "Pago en efectivo no disponible en este local";
+  }
+
+  return "";
+};
+
 const obtenerRangoMes = (anioRaw, mesRaw) => {
   const anio = Number(anioRaw);
   const mes = Number(mesRaw);
@@ -206,6 +241,20 @@ router.post("/", async (req, res) => {
 
     if (!localId) {
       return res.status(400).json({ msg: "Debes seleccionar un local" });
+    }
+
+    const local = await Local.findById(localId);
+    if (!local) {
+      return res.status(404).json({ msg: "Local no encontrado" });
+    }
+
+    const errorCanalPago = validarCanalesYPagoLocal(
+      local,
+      tipoPedidoRaw || inferirTipoPedidoDesdeProductos(productos),
+      String(tipoPago || "").toLowerCase()
+    );
+    if (errorCanalPago) {
+      return res.status(400).json({ msg: errorCanalPago });
     }
 
     const socialConfig = await SocialConfig.findOne({ local: localId });

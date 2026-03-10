@@ -13,6 +13,7 @@ const router = express.Router();
 const CheckoutSession = require("../models/checkoutSession.model");
 const VentaCliente = require("../models/ventaCliente.model");
 const Cliente = require("../models/Cliente");
+const Local = require("../models/local.model");
 const SocialConfig = require("../models/socialConfig.model");
 const { getJwtSecret } = require("../utils/jwtConfig");
 const {
@@ -139,6 +140,30 @@ const normalizarTipoPedido = (raw) => {
   return tipo;
 };
 
+const validarCanalesYPagoLocal = (local, tipoPedido) => {
+  if (!local) {
+    return "Local no encontrado";
+  }
+
+  const servicios = local?.servicios || {};
+  const pagosWeb = local?.pagos_web || {};
+
+  if (tipoPedido === "delivery" && servicios.delivery === false) {
+    return "Delivery no disponible en este local";
+  }
+  if (tipoPedido === "retiro" && servicios.retiro === false) {
+    return "Retiro en tienda no disponible en este local";
+  }
+  if (tipoPedido === "tienda" && servicios.tienda === false) {
+    return "Consumo en tienda no disponible en este local";
+  }
+  if (pagosWeb.tarjeta === false) {
+    return "Pago con tarjeta no disponible en este local";
+  }
+
+  return "";
+};
+
 const isPagoAutorizado = (result) => {
   const status = String(result?.status || "").toUpperCase();
   const responseCode = Number(result?.response_code);
@@ -254,6 +279,11 @@ router.post("/crear-sesion", async (req, res) => {
       return res.status(400).json({ error: "Nombre y telefono son obligatorios" });
     }
 
+    const local = await Local.findById(localId);
+    if (!local) {
+      return res.status(404).json({ error: "Local no encontrado" });
+    }
+
     const total = items.reduce((sum, item) => sum + Number(item.precio || 0) * Number(item.cantidad || 1), 0);
     if (!Number.isFinite(total) || total <= 0) {
       return res.status(400).json({ error: "Total invalido" });
@@ -269,6 +299,11 @@ router.post("/crear-sesion", async (req, res) => {
       : isValidEmail(emailCliente)
       ? emailCliente
       : "sin_correo";
+
+    const errorCanalPago = validarCanalesYPagoLocal(local, tipoPedido);
+    if (errorCanalPago) {
+      return res.status(400).json({ error: errorCanalPago });
+    }
 
     const socialConfig = await SocialConfig.findOne({ local: localId });
     const horariosWeb = normalizeWebSchedule(socialConfig?.horarios_web);

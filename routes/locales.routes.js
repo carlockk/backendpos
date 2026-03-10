@@ -13,14 +13,42 @@ const requireAdmin = (req, res, next) => {
   return next();
 };
 
-const construirPayload = (data) => {
+const normalizeBoolean = (value, fallback = true) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'si', 'sí', 'yes'].includes(normalized)) return true;
+    if (['false', '0', 'no'].includes(normalized)) return false;
+  }
+  return fallback;
+};
+
+const construirConfigServicios = (raw, fallback = {}) => ({
+  tienda: normalizeBoolean(raw?.tienda, fallback?.tienda !== false),
+  retiro: normalizeBoolean(raw?.retiro, fallback?.retiro !== false),
+  delivery: normalizeBoolean(raw?.delivery, fallback?.delivery !== false),
+});
+
+const construirConfigPagosWeb = (raw, fallback = {}) => ({
+  efectivo: normalizeBoolean(raw?.efectivo, fallback?.efectivo !== false),
+  tarjeta: normalizeBoolean(raw?.tarjeta, fallback?.tarjeta !== false),
+});
+
+const construirPayload = (data, currentLocal = null) => {
   const nombre = sanitizeText(data.nombre, { max: 80 });
   const direccion = sanitizeOptionalText(data.direccion, { max: 160 });
   const telefono = sanitizeOptionalText(data.telefono, { max: 40 });
   const correoRaw = sanitizeOptionalText(data.correo, { max: 120 });
   const correo = correoRaw ? normalizeEmail(correoRaw) : '';
 
-  return { nombre, direccion, telefono, correo };
+  return {
+    nombre,
+    direccion,
+    telefono,
+    correo,
+    servicios: construirConfigServicios(data?.servicios, currentLocal?.servicios || {}),
+    pagos_web: construirConfigPagosWeb(data?.pagos_web, currentLocal?.pagos_web || {}),
+  };
 };
 
 router.get('/', async (_req, res) => {
@@ -62,7 +90,9 @@ router.post('/', adjuntarScopeLocal, requireAdmin, async (req, res) => {
       nombre: payload.nombre,
       direccion: payload.direccion || '',
       telefono: payload.telefono || '',
-      correo: payload.correo || ''
+      correo: payload.correo || '',
+      servicios: payload.servicios,
+      pagos_web: payload.pagos_web,
     });
 
     const guardado = await nuevo.save();
@@ -77,18 +107,19 @@ router.put('/:id', adjuntarScopeLocal, requireAdmin, async (req, res) => {
     if (req.userRole !== 'superadmin' && String(req.localId || '') !== String(req.params.id)) {
       return res.status(403).json({ error: 'No puedes editar otro local' });
     }
-    const payload = construirPayload(req.body);
+
+    const local = await Local.findById(req.params.id);
+    if (!local) {
+      return res.status(404).json({ error: 'Local no encontrado' });
+    }
+
+    const payload = construirPayload(req.body, local);
     if (!payload.nombre) {
       return res.status(400).json({ error: 'Nombre requerido' });
     }
 
     if (payload.correo && !isValidEmail(payload.correo)) {
       return res.status(400).json({ error: 'Correo invalido' });
-    }
-
-    const local = await Local.findById(req.params.id);
-    if (!local) {
-      return res.status(404).json({ error: 'Local no encontrado' });
     }
 
     const existe = await Local.findOne({ nombre: payload.nombre, _id: { $ne: req.params.id } });
@@ -100,6 +131,8 @@ router.put('/:id', adjuntarScopeLocal, requireAdmin, async (req, res) => {
     local.direccion = payload.direccion || '';
     local.telefono = payload.telefono || '';
     local.correo = payload.correo || '';
+    local.servicios = payload.servicios;
+    local.pagos_web = payload.pagos_web;
 
     const actualizado = await local.save();
     res.json(actualizado);
