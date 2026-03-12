@@ -29,6 +29,7 @@ const {
   validatePickupTime,
   resolveScheduleClock,
 } = require("../utils/webSchedule");
+const { normalizeCoordinate, resolveMatchingZone } = require("../utils/deliveryZones");
 
 const JWT_SECRET = getJwtSecret();
 
@@ -218,8 +219,10 @@ const crearVentaClienteDesdeCheckout = async (sessionId) => {
     cliente_id: pending.cliente_id || null,
     cliente_email: pending.cliente_email || "sin_correo",
     cliente_nombre: pending.cliente_nombre || "",
-    cliente_direccion: pending.cliente_direccion || "",
-    cliente_telefono: pending.cliente_telefono || "",
+      cliente_direccion: pending.cliente_direccion || "",
+      cliente_coords: pending.cliente_coords || { lat: null, lng: null },
+      delivery_zone_name: pending.delivery_zone_name || "",
+      cliente_telefono: pending.cliente_telefono || "",
   });
 
   pending.venta_cliente_id = venta._id;
@@ -273,6 +276,7 @@ router.post("/crear-sesion", async (req, res) => {
     const clienteNombre = sanitizeText(order?.cliente?.nombre, { max: 120 });
     const clienteTelefono = sanitizeText(order?.cliente?.telefono, { max: 40 });
     const clienteDireccion = sanitizeOptionalText(order?.cliente?.direccion, { max: 220 }) || "";
+    const clienteCoords = normalizeCoordinate(order?.cliente?.coords);
     const clienteCorreoRaw = normalizeEmail(order?.cliente?.correo || "");
 
     if (!clienteNombre || !clienteTelefono) {
@@ -322,6 +326,18 @@ router.post("/crear-sesion", async (req, res) => {
       }
     }
 
+    let deliveryZoneName = "";
+    if (tipoPedido === "delivery") {
+      if (!clienteCoords) {
+        return res.status(400).json({ error: "Debes confirmar una ubicacion valida en el mapa para delivery" });
+      }
+      const zoneResult = resolveMatchingZone(local?.delivery_zones || [], clienteCoords);
+      if (!zoneResult.ok) {
+        return res.status(400).json({ error: zoneResult.reason });
+      }
+      deliveryZoneName = zoneResult.zone?.name || "";
+    }
+
     const tx = getTransbankTx();
     const buyOrder = generarBuyOrder();
     const sessionId = generarSessionId(clienteId);
@@ -337,6 +353,8 @@ router.post("/crear-sesion", async (req, res) => {
       cliente_email: emailFinal,
       cliente_nombre: clienteNombre,
       cliente_direccion: clienteDireccion,
+      cliente_coords: clienteCoords || { lat: null, lng: null },
+      delivery_zone_name: deliveryZoneName,
       cliente_telefono: clienteTelefono,
       tipo_pedido: tipoPedido,
       hora_retiro: tipoPedido === "retiro" ? horaRetiro : "",

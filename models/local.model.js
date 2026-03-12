@@ -14,6 +14,20 @@ const localSchema = new mongoose.Schema({
     efectivo: { type: Boolean, default: true },
     tarjeta: { type: Boolean, default: true },
   },
+  delivery_zones: [
+    {
+      name: { type: String, trim: true, default: "" },
+      color: { type: String, trim: true, default: "#2563eb" },
+      active: { type: Boolean, default: true },
+      priority: { type: Number, default: 0 },
+      polygon: [
+        {
+          lat: { type: Number, required: true },
+          lng: { type: Number, required: true },
+        }
+      ],
+    }
+  ],
   creado_en: { type: Date, default: Date.now }
 });
 

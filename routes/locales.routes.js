@@ -2,6 +2,7 @@ const express = require('express');
 const Local = require('../models/local.model');
 const { sanitizeText, sanitizeOptionalText, normalizeEmail, isValidEmail } = require('../utils/input');
 const { adjuntarScopeLocal } = require('../middlewares/localScope');
+const { normalizeDeliveryZones } = require('../utils/deliveryZones');
 
 const router = express.Router();
 
@@ -48,6 +49,7 @@ const construirPayload = (data, currentLocal = null) => {
     correo,
     servicios: construirConfigServicios(data?.servicios, currentLocal?.servicios || {}),
     pagos_web: construirConfigPagosWeb(data?.pagos_web, currentLocal?.pagos_web || {}),
+    delivery_zones: normalizeDeliveryZones(data?.delivery_zones ?? currentLocal?.delivery_zones ?? []),
   };
 };
 
@@ -93,6 +95,7 @@ router.post('/', adjuntarScopeLocal, requireAdmin, async (req, res) => {
       correo: payload.correo || '',
       servicios: payload.servicios,
       pagos_web: payload.pagos_web,
+      delivery_zones: payload.delivery_zones,
     });
 
     const guardado = await nuevo.save();
@@ -133,6 +136,7 @@ router.put('/:id', adjuntarScopeLocal, requireAdmin, async (req, res) => {
     local.correo = payload.correo || '';
     local.servicios = payload.servicios;
     local.pagos_web = payload.pagos_web;
+    local.delivery_zones = payload.delivery_zones;
 
     const actualizado = await local.save();
     res.json(actualizado);

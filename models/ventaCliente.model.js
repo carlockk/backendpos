@@ -46,6 +46,11 @@ const VentaClienteSchema = new mongoose.Schema({
   cliente_email: String,
   cliente_nombre: String,
   cliente_direccion: { type: String, default: "" },
+  cliente_coords: {
+    lat: { type: Number, default: null },
+    lng: { type: Number, default: null },
+  },
+  delivery_zone_name: { type: String, default: "" },
   cliente_telefono: String,
   repartidor_asignado: { type: mongoose.Schema.Types.ObjectId, ref: "Usuario", default: null },
   fecha_asignacion_repartidor: { type: Date, default: null }

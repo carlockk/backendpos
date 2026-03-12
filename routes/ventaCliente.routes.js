@@ -24,6 +24,7 @@ const {
   validatePickupTime,
   resolveScheduleClock,
 } = require("../utils/webSchedule");
+const { normalizeCoordinate, resolveMatchingZone } = require("../utils/deliveryZones");
 
 const JWT_SECRET = getJwtSecret();
 const DEFAULT_ESTADOS_PEDIDO = [
@@ -224,6 +225,7 @@ router.post("/", async (req, res) => {
     const clienteNombre = sanitizeOptionalText(req.body.cliente_nombre, { max: 120 }) || "";
     const clienteDireccion = sanitizeOptionalText(req.body.cliente_direccion, { max: 220 }) || "";
     const clienteTelefono = sanitizeOptionalText(req.body.cliente_telefono, { max: 40 }) || "";
+    const clienteCoords = normalizeCoordinate(req.body.cliente_coords);
 
     if (!productos || productos.length === 0 || total === null || !tipoPago) {
       return res.status(400).json({ msg: "Datos incompletos" });
@@ -274,6 +276,19 @@ router.post("/", async (req, res) => {
       }
     }
 
+    const tipoPedidoFinal = tipoPedidoRaw || inferirTipoPedidoDesdeProductos(productos);
+    let deliveryZoneName = "";
+    if (tipoPedidoFinal === "delivery") {
+      if (!clienteCoords) {
+        return res.status(400).json({ msg: "Debes confirmar una ubicacion valida en el mapa para delivery" });
+      }
+      const zoneResult = resolveMatchingZone(local?.delivery_zones || [], clienteCoords);
+      if (!zoneResult.ok) {
+        return res.status(400).json({ msg: zoneResult.reason });
+      }
+      deliveryZoneName = zoneResult.zone?.name || "";
+    }
+
     const emailClienteModel = normalizeEmail(cliente?.email || "");
     const emailFinal = isValidEmail(emailNormalizado)
       ? emailNormalizado
@@ -286,7 +301,7 @@ router.post("/", async (req, res) => {
       productos,
       total,
       tipo_pago: tipoPago,
-      tipo_pedido: tipoPedidoRaw || inferirTipoPedidoDesdeProductos(productos),
+      tipo_pedido: tipoPedidoFinal,
       hora_retiro: tipoPedidoRaw === "retiro" ? horaRetiro : "",
       estado_pedido: "pendiente",
       historial_estados: [
@@ -302,6 +317,8 @@ router.post("/", async (req, res) => {
       cliente_email: emailFinal,
       cliente_nombre: clienteNombre,
       cliente_direccion: clienteDireccion,
+      cliente_coords: clienteCoords || { lat: null, lng: null },
+      delivery_zone_name: deliveryZoneName,
       cliente_telefono: clienteTelefono,
       local: localId
     });
