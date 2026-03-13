@@ -13,6 +13,13 @@ const localSchema = new mongoose.Schema({
   pagos_web: {
     efectivo: { type: Boolean, default: true },
     tarjeta: { type: Boolean, default: true },
+    transferencia: { type: Boolean, default: false },
+    transferencia_datos: {
+      nombre: { type: String, trim: true, default: "" },
+      rut: { type: String, trim: true, default: "" },
+      numero_cuenta: { type: String, trim: true, default: "" },
+      correo: { type: String, trim: true, default: "" },
+    },
   },
   delivery_zones: [
     {

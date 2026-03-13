@@ -187,6 +187,8 @@ const validarCanalesYPagoLocal = (local, tipoPedido, tipoPago) => {
     ? "tarjeta"
     : ["efectivo", "caja", "domicilio"].includes(tipoPago)
     ? "efectivo"
+    : ["transferencia", "transferencia_bancaria"].includes(tipoPago)
+    ? "transferencia"
     : tipoPago;
 
   if (pagoNormalizado === "tarjeta" && pagosWeb.tarjeta === false) {
@@ -194,6 +196,9 @@ const validarCanalesYPagoLocal = (local, tipoPedido, tipoPago) => {
   }
   if (pagoNormalizado === "efectivo" && pagosWeb.efectivo === false) {
     return "Pago en efectivo no disponible en este local";
+  }
+  if (pagoNormalizado === "transferencia" && pagosWeb.transferencia === false) {
+    return "Pago por transferencia no disponible en este local";
   }
 
   return "";

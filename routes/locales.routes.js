@@ -33,6 +33,13 @@ const construirConfigServicios = (raw, fallback = {}) => ({
 const construirConfigPagosWeb = (raw, fallback = {}) => ({
   efectivo: normalizeBoolean(raw?.efectivo, fallback?.efectivo !== false),
   tarjeta: normalizeBoolean(raw?.tarjeta, fallback?.tarjeta !== false),
+  transferencia: normalizeBoolean(raw?.transferencia, fallback?.transferencia === true),
+  transferencia_datos: {
+    nombre: sanitizeOptionalText(raw?.transferencia_datos?.nombre, { max: 120 }) || '',
+    rut: sanitizeOptionalText(raw?.transferencia_datos?.rut, { max: 40 }) || '',
+    numero_cuenta: sanitizeOptionalText(raw?.transferencia_datos?.numero_cuenta, { max: 80 }) || '',
+    correo: sanitizeOptionalText(raw?.transferencia_datos?.correo, { max: 120 }) || '',
+  },
 });
 
 const construirPayload = (data, currentLocal = null) => {
@@ -83,6 +90,25 @@ router.post('/', adjuntarScopeLocal, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Correo invalido' });
     }
 
+    if (
+      payload.pagos_web.transferencia &&
+      (
+        !payload.pagos_web.transferencia_datos?.nombre ||
+        !payload.pagos_web.transferencia_datos?.rut ||
+        !payload.pagos_web.transferencia_datos?.numero_cuenta ||
+        !payload.pagos_web.transferencia_datos?.correo
+      )
+    ) {
+      return res.status(400).json({ error: 'Completa los datos de la cuenta para habilitar transferencia' });
+    }
+
+    if (
+      payload.pagos_web.transferencia_datos?.correo &&
+      !isValidEmail(payload.pagos_web.transferencia_datos.correo)
+    ) {
+      return res.status(400).json({ error: 'Correo de la cuenta invalido' });
+    }
+
     const existe = await Local.findOne({ nombre: payload.nombre });
     if (existe) {
       return res.status(400).json({ error: 'Ya existe un local con ese nombre' });
@@ -123,6 +149,25 @@ router.put('/:id', adjuntarScopeLocal, requireAdmin, async (req, res) => {
 
     if (payload.correo && !isValidEmail(payload.correo)) {
       return res.status(400).json({ error: 'Correo invalido' });
+    }
+
+    if (
+      payload.pagos_web.transferencia &&
+      (
+        !payload.pagos_web.transferencia_datos?.nombre ||
+        !payload.pagos_web.transferencia_datos?.rut ||
+        !payload.pagos_web.transferencia_datos?.numero_cuenta ||
+        !payload.pagos_web.transferencia_datos?.correo
+      )
+    ) {
+      return res.status(400).json({ error: 'Completa los datos de la cuenta para habilitar transferencia' });
+    }
+
+    if (
+      payload.pagos_web.transferencia_datos?.correo &&
+      !isValidEmail(payload.pagos_web.transferencia_datos.correo)
+    ) {
+      return res.status(400).json({ error: 'Correo de la cuenta invalido' });
     }
 
     const existe = await Local.findOne({ nombre: payload.nombre, _id: { $ne: req.params.id } });
