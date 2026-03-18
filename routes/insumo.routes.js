@@ -22,6 +22,8 @@ const parsePositiveNumber = (value, field) => {
   return numero;
 };
 
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const rolesObservaciones = new Set(['admin', 'superadmin', 'cajero']);
 
 const puedeGestionarObservaciones = (userRole) => rolesObservaciones.has(String(userRole || '').toLowerCase());
@@ -484,7 +486,10 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Nombre y unidad son requeridos' });
     }
 
-    const existe = await Insumo.findOne({ nombre, local: req.localId });
+    const existe = await Insumo.findOne({
+      nombre: { $regex: `^${escapeRegex(nombre)}$`, $options: 'i' },
+      local: req.localId
+    });
     if (existe) {
       return res.status(400).json({ error: 'Ya existe un insumo con ese nombre' });
     }
@@ -529,6 +534,17 @@ router.put('/:id', async (req, res) => {
 
     const insumo = await Insumo.findOne({ _id: req.params.id, local: req.localId });
     if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
+
+    if (nombre) {
+      const duplicado = await Insumo.findOne({
+        _id: { $ne: req.params.id },
+        local: req.localId,
+        nombre: { $regex: `^${escapeRegex(nombre)}$`, $options: 'i' }
+      });
+      if (duplicado) {
+        return res.status(400).json({ error: 'Ya existe un insumo con ese nombre' });
+      }
+    }
 
     if (nombre) insumo.nombre = nombre;
     if (unidad) insumo.unidad = unidad;
@@ -608,15 +624,30 @@ router.delete('/movimientos/:movId', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
+    if (!['admin', 'superadmin'].includes(req.userRole)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
     const insumo = await Insumo.findOne({ _id: req.params.id, local: req.localId });
     if (!insumo) return res.status(404).json({ error: 'Insumo no encontrado' });
 
-    const tieneLotes = await InsumoLote.exists({ insumo: req.params.id, local: req.localId });
-    if (tieneLotes) {
+    const tieneLotesReales = await InsumoLote.exists({
+      insumo: req.params.id,
+      local: req.localId,
+      $or: [
+        { lote: { $exists: true, $ne: '' } },
+        { fecha_vencimiento: { $ne: null } }
+      ]
+    });
+    if (tieneLotesReales) {
       return res.status(400).json({ error: 'No se puede eliminar un insumo con lotes' });
     }
 
-    await Insumo.deleteOne({ _id: req.params.id });
+    await Promise.all([
+      Insumo.deleteOne({ _id: req.params.id, local: req.localId }),
+      InsumoLote.deleteMany({ insumo: req.params.id, local: req.localId }),
+      InsumoMovimiento.deleteMany({ insumo: req.params.id, local: req.localId })
+    ]);
     res.json({ mensaje: 'Insumo eliminado' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar insumo' });
@@ -864,7 +895,7 @@ router.post('/:id/movimientos', async (req, res) => {
         }
         lote.cantidad += cantidad;
         await lote.save({ session });
-      } else {
+      } else if (loteNombre || fechaVenc) {
         lote = new InsumoLote({
           insumo: insumo._id,
           local: req.localId,
@@ -903,12 +934,9 @@ router.post('/:id/movimientos', async (req, res) => {
           .sort({ fecha_ingreso: 1 })
           .session(session);
 
-        if (!lotesDisponibles.length) {
-          return res.status(400).json({ error: 'No hay lote disponible para salida' });
-        }
-
         const totalDisponible = lotesDisponibles.reduce((acc, item) => acc + (item.cantidad || 0), 0);
-        if (totalDisponible < cantidad) {
+        const stockTotalActual = Number(insumo.stock_total || 0);
+        if (stockTotalActual < cantidad) {
           return res.status(400).json({ error: 'Cantidad supera el stock disponible' });
         }
 
@@ -937,7 +965,7 @@ router.post('/:id/movimientos', async (req, res) => {
       insumo: insumo._id,
       local: req.localId,
       lote: lote?._id || null,
-      tipo,
+      tipo: tipo === 'entrada' ? 'entrada' : 'salida',
       cantidad,
       motivo,
       nota: nota || undefined,
